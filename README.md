@@ -1,20 +1,28 @@
-# socialwarehouse
+# The Social Warehouse
 
-This is a data warehouse and data lake system for social, civic and social analysis from [Siege Analytics](https://www.siegeanalytics.com).
+This is a data warehouse and data lake system for social, civic and social analysis from [Siege Analytics](1).
 
 Built with:
 
-    * Kubernetes
+- [Kubernetes](4)
 
 Runs:  
 
-    PostgreSQL + PostGIS
-    Python
-    R
-    Geoserver
-    Notebook server
+- [PostgreSQL](5) + [PostGIS](6)
+- [Python](7)
+- [R](8)
+- [Geoserver](9)
+- [Zeppelin Notebook](10) 
 
-Data warehouse is built to enable longitudinal analysis from [Census](https://www.census.gov) and [Bureau of Labour Statistics](https://www.bls.gov).
+Data warehouse is built to enable longitudinal analysis from [Census](2) and [Bureau of Labour Statistics](3).
 
-
-
+[1]: http://www.siegeanalytics.com
+[2]: http://www.census.gov
+[3]: http://www.bls.gov
+[4]: https://kubernetes.io
+[5]: https://www.postgresql.org
+[6]: https://www.postgis.net
+[7]: https://www.python.org
+[8]: https://www.r-project.org
+[9]: https://www.geoserver.org
+[10]: https://zeppelin.apache.org

@@ -13,6 +13,8 @@ Runs:
 - [R](8)
 - [Geoserver](9)
 - [Zeppelin Notebook](10) 
+- [GeoTrellis](11)
+- [Ubuntu](12)
 
 Data warehouse is built to enable longitudinal analysis from [Census](2) and [Bureau of Labour Statistics](3).
 
@@ -26,3 +28,5 @@ Data warehouse is built to enable longitudinal analysis from [Census](2) and [Bu
 [8]: https://www.r-project.org
 [9]: https://www.geoserver.org
 [10]: https://zeppelin.apache.org
+[11]: https://geotrellis.readthedocs.io/en/latest/
+[12]: https://www.ubuntu.org

@@ -1,7 +1,22 @@
-# Evaluating Geocode Hygiene
+# socialwarehouse
 
-This is a Siege Analytics tool to evaluate geocode quality from client supplied lists.
-It is written in Python 3 and makes use of PostGIS for computations and storage.
+This is a data warehouse and data lake system for social, civic and social analysis from [Siege Analytics](https://www.siegeanalytics.com).
+
+Built with:
+
+    * Kubernetes
+
+Runs:  
+
+    PostgreSQL + PostGIS
+    Python
+    R
+    Geoserver
+    Notebook server
+
+Data warehouse is built to enable longitudinal analysis from [Census](https://www.census.gov) and [Bureau of Labour Statistics](https://www.bls.gov).
+
+## Makefile commands
 
 The entire project is wrapped in Docker in order to be fully self-contained, and has a Makefile for use.
 

@@ -15,7 +15,7 @@ ADD entrypoint.sh /usr/local/bin/
 RUN pip3 install -r /tmp/requirements.txt
 
 # This will get overwritten in the Docker Compose
-WORKDIR /opt/nea_geocode_analyser
+WORKDIR /opt/social_warehouse
 
 ENTRYPOINT entrypoint.sh
 CMD python3 --version

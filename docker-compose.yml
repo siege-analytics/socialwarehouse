@@ -8,7 +8,10 @@ services:
       - POSTGRES_PASSWORD=dessert
       - POSTGRES_USER=dheerajchand
     volumes:
-      - ./:/opt/nea_geocode_analyser
+      - ./:/opt/social_warehouse_pg_data
+    restart: always
+    networks:
+      - social_warehouse_network
   postgis:
     image: postgis/postgis
     environment:
@@ -16,11 +19,27 @@ services:
       - POSTGRES_PASSWORD=dessert
       - POSTGRES_USER=dheerajchand
     ports:
-      - 54322:5432
+      - 54323:5432
     volumes:
-      - nea_analyser_pg_data:/var/lib/postgresql
+      - social_warehouse_pg_data:/var/lib/postgresql
+      - .pg_hba.conf:/etc/pg_hba.conf
     restart: always
+    networks:
+      - social_warehouse_network
+  zeppelin:
+    image: apache/zeppelin:0.10.1
+    container_name: zeppelin
+    ports:
+      - "8082:8080"
+    restart: always
+    networks:
+      - social_warehouse_network
+
 volumes:
-  nea_analyser_pg_data:
+  social_warehouse_pg_data:
     external: true
-    name: nea_analyser_pg_data
+    name: social_warehouse_pg_data
+
+networks:
+  social_warehouse_network:
+    driver: bridge

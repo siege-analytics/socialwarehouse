@@ -4,9 +4,15 @@
 stop:
 	docker compose stop
 up:
+	make stop
 	docker compose up -d
 
 build:
+	docker compose stop
+	docker compose build
+	docker volume create --name=social_warehouse_pg_data
+
+rebuild:
 	docker compose stop
 	docker compose build --no-cache
 	docker volume create --name=social_warehouse_pg_data

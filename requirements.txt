@@ -1,0 +1,15 @@
+psycopg2-binary
+pyproj
+ttictoc
+requests
+tqdm
+ipdb
+sqlalchemy
+pandas
+tobler
+pygdaltools
+inflection
+pysal
+scrapy
+ipython
+beautifulsoup4

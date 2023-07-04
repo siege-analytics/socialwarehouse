@@ -1,32 +1,13 @@
-# The Social Warehouse
+# Evaluating Geocode Hygiene
 
-This is a data warehouse and data lake system for social, civic and social analysis from [Siege Analytics](1).
+This is a Siege Analytics tool to evaluate geocode quality from client supplied lists.
+It is written in Python 3 and makes use of PostGIS for computations and storage.
 
-Built with:
+The entire project is wrapped in Docker in order to be fully self-contained, and has a Makefile for use.
 
-- [Kubernetes](4)
-
-Runs:  
-
-- [PostgreSQL](5) + [PostGIS](6)
-- [Python](7)
-- [R](8)
-- [Geoserver](9)
-- [Zeppelin Notebook](10) 
-- [GeoTrellis](11)
-- [Ubuntu](12)
-
-Data warehouse is built to enable longitudinal analysis from [Census](2) and [Bureau of Labour Statistics](3).
-
-[1]: http://www.siegeanalytics.com
-[2]: http://www.census.gov
-[3]: http://www.bls.gov
-[4]: https://kubernetes.io
-[5]: https://www.postgresql.org
-[6]: https://www.postgis.net
-[7]: https://www.python.org
-[8]: https://www.r-project.org
-[9]: https://www.geoserver.org
-[10]: https://zeppelin.apache.org
-[11]: https://geotrellis.readthedocs.io/en/latest/
-[12]: https://www.ubuntu.org
+1. make build - this will create the necessary containers, recreating if necessary
+2. make up - this will start the containers
+3. make ensure-paths - this creates the paths necessary for the work to be done
+4. make fetch-census-shapefiles - this will fetch the Census shapefiles
+5. make fetch-census-acs - this will fetch ACS information
+6. make load-census-shapefiles - this will put the census shapefiles into PostGIS

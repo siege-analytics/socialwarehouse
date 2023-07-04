@@ -1,0 +1,26 @@
+version: '3.5'
+services:
+  python:
+    build: .
+    environment:
+      - POSTGRES_HOST=postgis
+      - POSTGRES_DB=gis
+      - POSTGRES_PASSWORD=dessert
+      - POSTGRES_USER=dheerajchand
+    volumes:
+      - ./:/opt/nea_geocode_analyser
+  postgis:
+    image: postgis/postgis
+    environment:
+      - POSTGRES_DB=gis
+      - POSTGRES_PASSWORD=dessert
+      - POSTGRES_USER=dheerajchand
+    ports:
+      - 54322:5432
+    volumes:
+      - nea_analyser_pg_data:/var/lib/postgresql
+    restart: always
+volumes:
+  nea_analyser_pg_data:
+    external: true
+    name: nea_analyser_pg_data

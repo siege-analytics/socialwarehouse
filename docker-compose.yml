@@ -8,7 +8,7 @@ services:
       - POSTGRES_PASSWORD=dessert
       - POSTGRES_USER=dheerajchand
     volumes:
-      - ./:/opt/social_warehouse_pg_data
+      - /Users/dheerajchand/Documents/Professional/Siege_Analytics/docker_things/social_warehouse_pg_data:/opt/social_warehouse_pg_data
     restart: always
     networks:
       - social_warehouse_network

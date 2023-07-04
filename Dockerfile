@@ -14,8 +14,10 @@ ADD entrypoint.sh /usr/local/bin/
 # Install PIP requirements
 RUN pip3 install -r /tmp/requirements.txt
 
-# This will get overwritten in the Docker Compose
+COPY code/ /opt/social_warehouse/code/
+
 WORKDIR /opt/social_warehouse
 
 ENTRYPOINT entrypoint.sh
+
 CMD python3 --version

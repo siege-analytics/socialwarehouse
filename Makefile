@@ -3,6 +3,7 @@
 
 stop:
 	docker compose stop
+
 up:
 	make stop
 	docker compose up -d

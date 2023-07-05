@@ -1,28 +1,34 @@
-# socialwarehouse
+# The Social Warehouse
 
-This is a data warehouse and data lake system for social, civic and social analysis from [Siege Analytics](https://www.siegeanalytics.com).
+This is a data warehouse and data lake system for social, civic and social analysis from [Siege Analytics](1).
 
 Built with:
 
-    * Kubernetes
+- [Kubernetes](4)
+- [MinIO](13)
 
 Runs:  
 
-    PostgreSQL + PostGIS
-    Python
-    R
-    Geoserver
-    Notebook server
+- [PostgreSQL](5) + [PostGIS](6)
+- [Python](7)
+- [R](8)
+- [Geoserver](9)
+- [Zeppelin Notebook](10) 
+- [GeoTrellis](11)
+- [Ubuntu](12)
 
-Data warehouse is built to enable longitudinal analysis from [Census](https://www.census.gov) and [Bureau of Labour Statistics](https://www.bls.gov).
+Data warehouse is built to enable longitudinal analysis from [Census](2) and [Bureau of Labour Statistics](3).
 
-## Makefile commands
-
-The entire project is wrapped in Docker in order to be fully self-contained, and has a Makefile for use.
-
-1. make build - this will create the necessary containers, recreating if necessary
-2. make up - this will start the containers
-3. make ensure-paths - this creates the paths necessary for the work to be done
-4. make fetch-census-shapefiles - this will fetch the Census shapefiles
-5. make fetch-census-acs - this will fetch ACS information
-6. make load-census-shapefiles - this will put the census shapefiles into PostGIS
+[1]: http://www.siegeanalytics.com
+[2]: http://www.census.gov
+[3]: http://www.bls.gov
+[4]: https://kubernetes.io
+[5]: https://www.postgresql.org
+[6]: https://www.postgis.net
+[7]: https://www.python.org
+[8]: https://www.r-project.org
+[9]: https://www.geoserver.org
+[10]: https://zeppelin.apache.org
+[11]: https://geotrellis.readthedocs.io/en/latest/
+[12]: https://www.ubuntu.org
+[13]: https://www.min.io

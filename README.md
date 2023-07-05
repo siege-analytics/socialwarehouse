@@ -18,6 +18,11 @@ Runs:
 - [Ubuntu](12)
 
 Data warehouse is built to enable longitudinal analysis from [Census](2) and [Bureau of Labour Statistics](3).
+Intended growth: 
+    - FEC information
+    - Election results
+    - Media markets
+    - Officials and jurisdictions
 
 [1]: http://www.siegeanalytics.com
 [2]: http://www.census.gov

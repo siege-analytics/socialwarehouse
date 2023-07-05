@@ -4,6 +4,7 @@ inflection
 ipdb
 ipython
 pandas
+polars[all]
 psycopg2-binary
 pygdaltools
 pyproj

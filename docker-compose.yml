@@ -1,4 +1,4 @@
-version: '3.5'
+version: '3.8'
 services:
   python:
     build: .
@@ -13,7 +13,7 @@ services:
     networks:
       - social_warehouse_network
   postgis:
-    image: postgis/postgis
+    image: postgis/postgis:13-master
     environment:
       - POSTGRES_DB=gis
       - POSTGRES_PASSWORD=dessert
@@ -22,7 +22,7 @@ services:
       - 54323:5432
     volumes:
       - social_warehouse_pg_data:/var/lib/postgresql
-      - .pg_hba.conf:/etc/pg_hba.conf
+      - ${PWD}/pg_hba.conf:/etc/pg_hba.conf
     restart: always
     networks:
       - social_warehouse_network
@@ -30,16 +30,16 @@ services:
     image: apache/zeppelin:0.10.1
     container_name: zeppelin
     ports:
-      - "8082:8080"
+      - 8082:8080
     restart: always
+    environment:
+      - ZEPPELIN_IN_DOCKER=true
     networks:
       - social_warehouse_network
+    depends_on:
+      - postgis
 
 volumes:
   social_warehouse_pg_data:
-    external: true
-    name: social_warehouse_pg_data
-
 networks:
-  social_warehouse_network:
-    driver: bridge
+  social_warehouse_network: null

@@ -1,6 +1,7 @@
 version: '3.8'
 services:
   python:
+    container_name: python
     build: .
     environment:
       - POSTGRES_HOST=postgis
@@ -14,6 +15,7 @@ services:
       - social_warehouse_network
   postgis:
     image: postgis/postgis:13-master
+    container_name: postgis
     environment:
       - POSTGRES_DB=gis
       - POSTGRES_PASSWORD=dessert

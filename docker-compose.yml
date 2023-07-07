@@ -19,7 +19,7 @@ services:
       - POSTGRES_PASSWORD=dessert
       - POSTGRES_USER=dheerajchand
     ports:
-      - 54323:5432
+      - 54324:5432
     volumes:
       - social_warehouse_pg_data:/var/lib/postgresql
       - ${PWD}/pg_hba.conf:/etc/pg_hba.conf

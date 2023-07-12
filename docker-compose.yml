@@ -18,11 +18,11 @@ services:
       - POSTGRES_DB=gis
       - POSTGRES_PASSWORD=dessert
       - POSTGRES_USER=dheerajchand
+      - POSTGRES_HOST_AUTH_METHOD=password
     ports:
       - 54324:5432
     volumes:
       - social_warehouse_pg_data:/var/lib/postgresql
-      - ${PWD}/pg_hba.conf:/etc/pg_hba.conf
     restart: always
     networks:
       - social_warehouse_network

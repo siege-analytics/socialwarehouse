@@ -66,13 +66,3 @@ load-nces-shapefiles:
 	docker compose exec python \
 		python3 code/python/load_nces_shapefiles.py
 
-hba:
-	echo 'Removing md5 auth'
-	docker exec -it socialwarehouse-postgis-1 bash -c "sed -i '/host all all all md5/d' /var/lib/postgresql/data/pg_hba.conf"
-	echo 'adding password auth'
-	docker exec -it socialwarehouse-postgis-1 bash -c "echo 'host all all 0.0.0.0/0 password'>> /var/lib/postgresql/data/pg_hba.conf"
-	echo 'final config file'
-	docker exec -it socialwarehouse-postgis-1 cat /var/lib/postgresql/data/pg_hba.conf
-	echo 'restarting postgres'
-	make up
-

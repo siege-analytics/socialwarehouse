@@ -3,6 +3,8 @@ data/**/*.*
 data/inputs/**/*.*
 data/outputs/**/*.*
 
+# weird vim or mac things
+NetrwTreeListing
 
 ### Vagrant template
 # General

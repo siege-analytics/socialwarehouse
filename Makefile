@@ -2,11 +2,11 @@
 
 down:
 	docker-compose down
+
 stop:
 	docker compose stop
 
-up: 
-  stop
+up:
 	docker compose up -d
 
 build:

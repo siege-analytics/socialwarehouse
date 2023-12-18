@@ -24,7 +24,7 @@ clean:
 	docker compose rm
 
 shell:
-	docker compose exec postgis psql
+	docker compose exec postgis psql -U dheerajchand -d gis
 
 term:
 	docker compose exec python /bin/bash

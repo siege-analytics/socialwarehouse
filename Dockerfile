@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get clean && apt-get update \
     && apt-get install -y python3-pip gdal-bin python3-pyproj \
     build-essential wget ca-certificates postgresql postgresql-contrib \
-    postgis
+    postgis vim
 
 ADD requirements.txt /tmp/
 ADD entrypoint.sh /usr/local/bin/

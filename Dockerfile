@@ -14,7 +14,7 @@ ADD entrypoint.sh /usr/local/bin/
 # Install PIP requirements
 RUN pip3 install -r /tmp/requirements.txt
 
-COPY code/ /opt/social_warehouse/code/
+# COPY code/ /opt/social_warehouse/code/
 
 WORKDIR /opt/social_warehouse
 

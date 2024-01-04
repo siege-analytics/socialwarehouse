@@ -16,6 +16,7 @@ Runs:
 - [Zeppelin Notebook](10) 
 - [GeoTrellis](11)
 - [Ubuntu](12)
+- [dbt](14)
 
 Data warehouse is built to enable longitudinal analysis from [Census](2) and [Bureau of Labour Statistics](3).
 Intended growth: 
@@ -37,3 +38,4 @@ Intended growth:
 [11]: https://geotrellis.readthedocs.io/en/latest/
 [12]: https://www.ubuntu.org
 [13]: https://www.min.io
+[14]: https://medium.com/israeli-tech-radar/first-steps-with-dbt-over-postgres-db-f6b350bf4526

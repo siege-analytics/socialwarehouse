@@ -1,5 +1,48 @@
 version: '3.8'
 services:
+  spark-master:
+    container_name: da-spark-master
+    build: ./Dockerfile_Spark
+    image: da-spark-image
+    entrypoint: ['spark_entrypoint.sh', 'master']
+    healthcheck:
+      test: ["CMD", "curl", "-f", "https://localhost:8080"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    volumes:
+      - ./code:/opt/spark/code
+      - ./data:/opt/spark/data
+    env_file:
+      - .env_spark
+    ports:
+      - '9090:8080'
+      - '7077:7077'
+  spark-history-server:
+    container_name: da-spark-history
+    image: da-spark-image
+    entrypoint: ['spark_entrypoint.sh', 'history']
+    depends_on:
+      - spark-master
+    env_file:
+      - .env.spark
+    volumes:
+      - .code/spark/spark-logs:/opt/spark/spark-events
+    ports:
+      - '18080:18080'
+  spark-worker:
+    container_name: da-spark-worker
+    image: da-spark-worker
+    entrypoint: ['.spark_entrypoint.sh','worker']
+    depends_on:
+      - spark-master
+    env_file:
+      - .env.spark
+    volumes:
+      - ./data:/opt/spark/data
+      - ./code:/opt/spark/code
+      - ./code:/spark/spark-logs:/opt/spark/spark-events
+
   python:
     container_name: python
     build: .
@@ -43,5 +86,6 @@ services:
 
 volumes:
   social_warehouse_pg_data:
+  spark_logs
 networks:
   social_warehouse_network:

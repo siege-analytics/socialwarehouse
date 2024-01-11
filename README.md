@@ -17,10 +17,7 @@ Runs:
 - [GeoTrellis](11)
 - [Ubuntu](12)
 - [dbt](14)
-<<<<<<< HEAD
-=======
 - [Spark](15)
->>>>>>> 88ca55c (1. Added Spark to README 2. Adding Spark to containers)
 
 Data warehouse is built to enable longitudinal analysis from [Census](2) and [Bureau of Labour Statistics](3).
 Intended growth: 

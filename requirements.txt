@@ -17,6 +17,7 @@ pyproj
 pysal
 requests
 scrapy
+snowflake-connector-python
 sqlalchemy
 tobler
 ttictoc

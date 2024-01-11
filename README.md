@@ -17,6 +17,10 @@ Runs:
 - [GeoTrellis](11)
 - [Ubuntu](12)
 - [dbt](14)
+<<<<<<< HEAD
+=======
+- [Spark](15)
+>>>>>>> 88ca55c (1. Added Spark to README 2. Adding Spark to containers)
 
 Data warehouse is built to enable longitudinal analysis from [Census](2) and [Bureau of Labour Statistics](3).
 Intended growth: 
@@ -39,3 +43,4 @@ Intended growth:
 [12]: https://www.ubuntu.org
 [13]: https://www.min.io
 [14]: https://medium.com/israeli-tech-radar/first-steps-with-dbt-over-postgres-db-f6b350bf4526
+[15]: https://medium.com/@MarinAgli1/setting-up-a-spark-standalone-cluster-on-docker-in-layman-terms-8cbdc9fdd14b

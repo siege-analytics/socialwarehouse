@@ -86,6 +86,6 @@ services:
 
 volumes:
   social_warehouse_pg_data:
-  spark_logs
+  spark_logs:
 networks:
   social_warehouse_network:

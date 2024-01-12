@@ -1,7 +1,9 @@
 version: '3.8'
 services:
   spark-master:
-    build: /Users/dheerajchand/Documents/socialwarehouse/spark.Dockerfile
+    build:
+      context: .
+      dockerfile: spark.Dockerfile
     container_name: da-spark-master
     image: da-spark-image
     entrypoint: ['spark_entrypoint.sh', 'master']

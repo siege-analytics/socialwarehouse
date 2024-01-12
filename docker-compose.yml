@@ -1,8 +1,8 @@
 version: '3.8'
 services:
   spark-master:
+    build: /Users/dheerajchand/Documents/socialwarehouse/spark.Dockerfile
     container_name: da-spark-master
-    build: ./Dockerfile_Spark
     image: da-spark-image
     entrypoint: ['spark_entrypoint.sh', 'master']
     healthcheck:
@@ -14,7 +14,7 @@ services:
       - ./code:/opt/spark/code
       - ./data:/opt/spark/data
     env_file:
-      - .env_spark
+      - ./.env_spark
     ports:
       - '9090:8080'
       - '7077:7077'
@@ -25,7 +25,7 @@ services:
     depends_on:
       - spark-master
     env_file:
-      - .env.spark
+      - ./.env_spark
     volumes:
       - .code/spark/spark-logs:/opt/spark/spark-events
     ports:
@@ -37,7 +37,7 @@ services:
     depends_on:
       - spark-master
     env_file:
-      - .env.spark
+      - .env_spark
     volumes:
       - ./data:/opt/spark/data
       - ./code:/opt/spark/code

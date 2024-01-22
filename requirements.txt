@@ -13,6 +13,7 @@ pandas
 polars[all]
 psycopg2-binary
 pygdaltools
+python-dotenv
 pyproj
 pysal
 requests

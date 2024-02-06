@@ -1,6 +1,7 @@
-FROM python:3.10-bullseye as spark-base
+FROM ubuntu:latest as spark-base
+#FROM python:3.10-bullseye as spark-base
 
-ARG SPARK_VERSION=3.3.3
+ARG SPARK_VERSION=3.4.2
 
 # Install tools for OS
 
@@ -13,7 +14,14 @@ RUN apt-get update && \
         rsync \
         build-essential \
         software-properties-common \
-        ssh && \
+        ssh \
+        python3-pip \
+        gdal-bin \
+        libgdal-dev  \
+        python3-pyproj \
+        postgresql \
+        postgresql-contrib \
+        postgis && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -26,12 +34,17 @@ WORKDIR ${SPARK_HOME}
 
 from spark-base as pyspark
 
+
 # Download and install Spark
+# Spark URL has changed : https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz
+
 RUN curl https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
  && tar xvzf spark-${SPARK_VERSION}-bin-hadoop3.tgz --directory /opt/spark --strip-components 1 \
  && rm -rf spark-${SPARK_VERSION}-bin-hadoop3.tgz
 
+
 COPY spark_requirements.txt .
+RUN pip3 install --upgrade pip
 RUN pip3 install -r spark_requirements.txt
 
 # Set up Spark related environment variables
@@ -43,7 +56,7 @@ ENV SPARK_MASTER_PORT 7077
 ENV PYSPARK_PYTHON python3
 
 # Copy the default configurations into $SPARK_HOME/conf
-COPY ./code/conf/spark-defaults.conf "$SPARK_HOME/conf/"
+COPY ./code/config_files/spark-defaults.conf "$SPARK_HOME/conf/"
 
 RUN chmod u+x /opt/spark/sbin/* && \
     chmod u+x /opt/spark/bin/*

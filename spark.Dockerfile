@@ -1,9 +1,12 @@
-FROM ubuntu:latest as spark-base
-#FROM python:3.10-bullseye as spark-base
+# FROM ubuntu:latest as spark-base
+FROM python:3.10-bullseye as spark-base
 
 ARG SPARK_VERSION=3.4.2
+ARG GDAL_VERSION=3.4.1
 
 # Install tools for OS
+
+
 
 RUN apt-get update && \
     apt-get install -y --install-recommends \
@@ -43,6 +46,15 @@ RUN curl https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VER
  && rm -rf spark-${SPARK_VERSION}-bin-hadoop3.tgz
 
 
+# trying out GDAL fix
+# https://gis.stackexchange.com/questions/28966/python-gdal-package-missing-header-file-when-installing-via-pip
+
+RUN apt-get install -y --install-recommends libgdal-dev
+RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal
+RUN export C_INCLUDE_PATH=/usr/include/gdal
+# RUN pip install gdal==3.4.1
+
+# Python
 COPY spark_requirements.txt .
 RUN pip3 install --upgrade pip
 RUN pip3 install -r spark_requirements.txt

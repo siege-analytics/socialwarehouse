@@ -33,9 +33,12 @@ services:
     ports:
       - '18080:18080'
   spark-worker:
+    build:
+      context: .
+      dockerfile: spark.Dockerfile
     container_name: da-spark-worker
     image: da-spark-worker
-    entrypoint: ['.spark_entrypoint.sh','worker']
+    entrypoint: ['spark_entrypoint.sh','worker']
     depends_on:
       - spark-master
     env_file:

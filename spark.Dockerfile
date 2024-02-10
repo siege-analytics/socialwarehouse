@@ -22,6 +22,8 @@ RUN apt-get update && \
         python3-pyproj \
         postgresql \
         postgresql-contrib \
+        unzip \
+        zip \
         postgis && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -33,6 +35,19 @@ ENV HADOOP_HOME=${HADOOP_HOME:-"/opt/hadoop"}
 RUN mkdir -p ${HADOOP_HOME} && mkdir -p ${SPARK_HOME}
 WORKDIR ${SPARK_HOME}
 
+# Trying to add sdkman
+# https://stackoverflow.com/questions/53656537/install-sdkman-in-docker-image
+
+RUN rm /bin/sh && ln -s /bin/bash /bin/sh
+RUN apt-get -qq -y install curl wget unzip zip
+
+RUN curl -s "https://get.sdkman.io" | bash
+RUN source "$HOME/.sdkman/bin/sdkman-init.sh"
+
+# Add Java and Scala
+
+#RUN sdk install scala 3.3.1
+
 from spark-base as pyspark
 
 # Download and install Spark
@@ -41,7 +56,6 @@ from spark-base as pyspark
 RUN curl https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
  && tar xvzf spark-${SPARK_VERSION}-bin-hadoop3.tgz --directory /opt/spark --strip-components 1 \
  && rm -rf spark-${SPARK_VERSION}-bin-hadoop3.tgz
-
 
 # trying out GDAL fix
 # https://gis.stackexchange.com/questions/28966/python-gdal-package-missing-header-file-when-installing-via-pip

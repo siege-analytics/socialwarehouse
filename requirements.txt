@@ -5,7 +5,6 @@ dbt-redshift
 dbt-snowflake
 dbt-bigquery
 dbt-trino
-gdal
 inflection
 ipdb
 ipython

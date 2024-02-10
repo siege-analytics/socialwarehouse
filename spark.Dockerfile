@@ -6,8 +6,6 @@ ARG GDAL_VERSION=3.4.1
 
 # Install tools for OS
 
-
-
 RUN apt-get update && \
     apt-get install -y --install-recommends \
         sudo \
@@ -36,7 +34,6 @@ RUN mkdir -p ${HADOOP_HOME} && mkdir -p ${SPARK_HOME}
 WORKDIR ${SPARK_HOME}
 
 from spark-base as pyspark
-
 
 # Download and install Spark
 # Spark URL has changed : https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz
@@ -76,6 +73,6 @@ RUN chmod u+x /opt/spark/sbin/* && \
 ENV PYTHONPATH=$SPARK_HOME/python:$PYTHONPATH
 
 # Copy appropriate entrpoint
-COPY spark_entrypoint.sh .
+COPY spark_entrypoint.sh /usr/local/bin/
 
-ENTRYPOINT [".spark_entrypoint.sh"]
+ENTRYPOINT spark_entrypoint.sh

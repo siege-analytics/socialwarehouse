@@ -23,10 +23,10 @@ clean:
 	docker compose down
 	docker compose rm
 
-shell:
+pg_shell:
 	docker compose exec postgis psql -U dheerajchand -d gis
 
-term:
+python_term:
 	docker compose exec python /bin/bash
 
 # Functional operations

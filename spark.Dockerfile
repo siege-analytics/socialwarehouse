@@ -1,13 +1,14 @@
-# FROM ubuntu:latest as spark-base
-FROM python:3.10-bullseye as spark-base
+FROM ubuntu:latest as spark-base
+ENV DEBIAN_FRONTEND noninteractive
 
 ARG SPARK_VERSION=3.4.2
 ARG GDAL_VERSION=3.4.1
 
 # Install tools for OS
 
-RUN apt-get update && \
-    apt-get install -y --install-recommends \
+RUN apt-get update
+RUN apt-get install -y tzdata
+RUN apt-get install -y --install-recommends \
         sudo \
         curl \
         vim \
@@ -63,7 +64,8 @@ RUN curl https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VER
 RUN apt-get install -y --install-recommends libgdal-dev
 RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal
 RUN export C_INCLUDE_PATH=/usr/include/gdal
-# RUN pip install gdal==3.4.1
+RUN pip3 install --upgrade pip
+RUN pip3 install gdal==3.4.1
 
 # Python
 COPY spark_requirements.txt .
@@ -85,6 +87,15 @@ RUN chmod u+x /opt/spark/sbin/* && \
     chmod u+x /opt/spark/bin/*
 
 ENV PYTHONPATH=$SPARK_HOME/python:$PYTHONPATH
+
+# install sdkman for java and scala
+
+RUN curl -s "https://get.sdkman.io" | bash
+RUN exec bash
+RUN source "$HOME/.sdkman/bin/sdkman-init.sh"
+RUN exec bash
+RUN sdk install java 11.0.2
+RUN sdk install scala 3.3.1
 
 # Copy appropriate entrpoint
 COPY spark_entrypoint.sh /usr/local/bin/

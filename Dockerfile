@@ -21,7 +21,7 @@ ADD entrypoint.sh /usr/local/bin/
 RUN apt-get install -y --install-recommends libgdal-dev
 RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal
 RUN export C_INCLUDE_PATH=/usr/include/gdal
-RUN pip install gdal==3.4.1
+RUN pip3 install gdal==3.4.1
 
 
 # Install PIP requirements

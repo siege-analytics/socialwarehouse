@@ -57,10 +57,12 @@ ENV SPARK_DOWNLOAD_URL https://archive.apache.org/dist/spark/spark-${SPARK_VERSI
 ENV SPARK_FILE_NAME spark-${SPARK_VERSION}-bin-hadoop3-scala${SCALA_VERSION}.tgz
 ENV SPARK_FILE_PATH ${SPARK_HOME}/${SPARK_FILE_NAME}
 
-#RUN curl -L ${SPARK_DOWNLOAD_URL} -o ${SPARK_FILE_PATH}
 RUN wget -O ${SPARK_FILE_PATH} https://archive.apache.org/dist/spark/spark-3.4.2/spark-3.4.2-bin-hadoop3-scala2.13.tgz
-RUN tar -xvzf ${SPARK_FILE_PATH} --directory /opt/spark
+RUN tar -xvzf ${SPARK_FILE_PATH} --directory /tmp
+RUN mv /tmp/spark-3.4.2-bin-hadoop3-scala2.13 /opt/spark
 RUN rm -rf ${SPARK_FILE_PATH}
+
+
 
 # trying out GDAL fix
 
@@ -100,4 +102,5 @@ RUN /bin/bash -c "source $HOME/.sdkman/bin/sdkman-init.sh; sdk version; sdk inst
 # Copy appropriate entrpoint
 COPY spark_entrypoint.sh /usr/local/bin/
 
-ENTRYPOINT spark_entrypoint.sh
+# ENTRYPOINT spark_entrypoint.sh
+ENTRYPOINT ["/bin/bash"]

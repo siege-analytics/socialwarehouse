@@ -2,6 +2,8 @@ FROM ubuntu:latest as spark-base
 ENV DEBIAN_FRONTEND noninteractive
 
 ARG SPARK_VERSION=3.4.2
+ARG JAVA_VERSION=11.0.22
+ARG SCALA_VERSION=2.13
 ARG GDAL_VERSION=3.4.1
 
 # Install tools for OS
@@ -54,9 +56,13 @@ from spark-base as pyspark
 # Download and install Spark
 # Spark URL has changed : https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz
 
-RUN curl https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
- && tar xvzf spark-${SPARK_VERSION}-bin-hadoop3.tgz --directory /opt/spark --strip-components 1 \
- && rm -rf spark-${SPARK_VERSION}-bin-hadoop3.tgz
+ENV SPARK_DOWNLOAD_URL https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3-scala${SCALA_VERSION}.tgz
+ENV SPARK_FILE_NAME spark-${SPARK_VERSION}-bin-hadoop3-scala${SCALA_VERSION}.tgz
+
+RUN curl ${SPARK_DOWNLOAD_URL} -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
+ && tar xvzf ${SPARK_FILE_NAME} --directory /opt/spark --strip-components 1 \
+ && rm -rf ${SPARK_FILE_NAME}
+
 
 # trying out GDAL fix
 # https://gis.stackexchange.com/questions/28966/python-gdal-package-missing-header-file-when-installing-via-pip
@@ -91,11 +97,9 @@ ENV PYTHONPATH=$SPARK_HOME/python:$PYTHONPATH
 # install sdkman for java and scala
 
 RUN curl -s "https://get.sdkman.io" | bash
-RUN exec bash
-RUN source "$HOME/.sdkman/bin/sdkman-init.sh"
-RUN exec bash
-RUN sdk install java 11.0.2
-RUN sdk install scala 3.3.1
+
+RUN /bin/bash -c "source $HOME/.sdkman/bin/sdkman-init.sh; sdk version; sdk install java ${JAVA_VERSION}; sdk install scala ${SCALA_VERSION}"
+
 
 # Copy appropriate entrpoint
 COPY spark_entrypoint.sh /usr/local/bin/

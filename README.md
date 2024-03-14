@@ -29,6 +29,7 @@ Intended growth:
 ## References
 
 - [How to make sdkman run in Dockerfile](16)
+- [GDAL Fix for Ubuntu](17)
 
 [1]: http://www.siegeanalytics.com
 [2]: http://www.census.gov
@@ -46,3 +47,4 @@ Intended growth:
 [14]: https://medium.com/israeli-tech-radar/first-steps-with-dbt-over-postgres-db-f6b350bf4526
 [15]: https://medium.com/@MarinAgli1/setting-up-a-spark-standalone-cluster-on-docker-in-layman-terms-8cbdc9fdd14b
 [16]: https://stackoverflow.com/questions/62188599/cannot-build-dockerfile-with-sdkman
+[17]: https://gis.stackexchange.com/questions/28966/python-gdal-package-missing-header-file-when-installing-via-pip

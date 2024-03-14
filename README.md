@@ -45,4 +45,4 @@ Intended growth:
 [13]: https://www.min.io
 [14]: https://medium.com/israeli-tech-radar/first-steps-with-dbt-over-postgres-db-f6b350bf4526
 [15]: https://medium.com/@MarinAgli1/setting-up-a-spark-standalone-cluster-on-docker-in-layman-terms-8cbdc9fdd14b
-[16]: https://stackoverflow.com/questions/35228970/docker-compose-build-single-container
+[16]: https://stackoverflow.com/questions/62188599/cannot-build-dockerfile-with-sdkman

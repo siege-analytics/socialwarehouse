@@ -2,8 +2,8 @@ FROM ubuntu:latest as spark-base
 ENV DEBIAN_FRONTEND noninteractive
 
 ARG SPARK_VERSION=3.4.2
-ARG JAVA_VERSION=11.0.22
-ARG SCALA_VERSION=2.13
+ARG JAVA_VERSION='11.0.22-ms'
+ARG SCALA_VERSION=2.13.2
 ARG GDAL_VERSION=3.4.1
 
 # Install tools for OS
@@ -54,12 +54,13 @@ RUN source "$HOME/.sdkman/bin/sdkman-init.sh"
 from spark-base as pyspark
 
 # Download and install Spark
-# Spark URL has changed : https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3.tgz
+# Spark URL has changed : https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3-scala${SCALA_VERSION}.tgz
 
 ENV SPARK_DOWNLOAD_URL https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3-scala${SCALA_VERSION}.tgz
 ENV SPARK_FILE_NAME spark-${SPARK_VERSION}-bin-hadoop3-scala${SCALA_VERSION}.tgz
 
-RUN curl ${SPARK_DOWNLOAD_URL} -o spark-${SPARK_VERSION}-bin-hadoop3.tgz \
+
+RUN curl ${SPARK_DOWNLOAD_URL} -o ${SPARK_FILE_NAME} \
  && tar xvzf ${SPARK_FILE_NAME} --directory /opt/spark --strip-components 1 \
  && rm -rf ${SPARK_FILE_NAME}
 
@@ -72,8 +73,8 @@ RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal
 RUN export C_INCLUDE_PATH=/usr/include/gdal
 RUN pip3 install --upgrade pip
 RUN pip3 install gdal==3.4.1
-
-# Python
+#
+## Python
 COPY spark_requirements.txt .
 RUN pip3 install --upgrade pip
 RUN pip3 install -r spark_requirements.txt
@@ -99,7 +100,6 @@ ENV PYTHONPATH=$SPARK_HOME/python:$PYTHONPATH
 RUN curl -s "https://get.sdkman.io" | bash
 
 RUN /bin/bash -c "source $HOME/.sdkman/bin/sdkman-init.sh; sdk version; sdk install java ${JAVA_VERSION}; sdk install scala ${SCALA_VERSION}"
-
 
 # Copy appropriate entrpoint
 COPY spark_entrypoint.sh /usr/local/bin/

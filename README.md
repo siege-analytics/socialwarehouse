@@ -21,15 +21,16 @@ Runs:
 
 Data warehouse is built to enable longitudinal analysis from [Census](2) and [Bureau of Labour Statistics](3).
 Intended growth: 
-    - FEC information
-    - Election results
-    - Media markets
-    - Officials and jurisdictions
+- FEC information
+- Election results
+- Media markets
+- Officials and jurisdictions
 
 ## References
 
 - [How to make sdkman run in Dockerfile](16)
 - [GDAL Fix for Ubuntu](17)
+- [JAVA_HOME Variable for sdkman in Dockerfile](18)
 
 [1]: http://www.siegeanalytics.com
 [2]: http://www.census.gov
@@ -48,3 +49,4 @@ Intended growth:
 [15]: https://medium.com/@MarinAgli1/setting-up-a-spark-standalone-cluster-on-docker-in-layman-terms-8cbdc9fdd14b
 [16]: https://stackoverflow.com/questions/62188599/cannot-build-dockerfile-with-sdkman
 [17]: https://gis.stackexchange.com/questions/28966/python-gdal-package-missing-header-file-when-installing-via-pip
+[18]: https://github.com/sdkman/sdkman-cli/issues/431

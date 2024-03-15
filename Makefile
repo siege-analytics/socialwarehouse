@@ -10,7 +10,7 @@ up:
 	docker compose up -d --remove-orphans
 
 build:
-	docker compose stop 
+	docker compose stop
 	docker compose build
 	docker volume create --name=social_warehouse_pg_data
 

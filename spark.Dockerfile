@@ -59,7 +59,7 @@ ENV SPARK_FILE_PATH ${SPARK_HOME}/${SPARK_FILE_NAME}
 
 RUN wget -O ${SPARK_FILE_PATH} https://archive.apache.org/dist/spark/spark-3.4.2/spark-3.4.2-bin-hadoop3-scala2.13.tgz
 RUN tar -xvzf ${SPARK_FILE_PATH} --directory /tmp
-RUN mv /tmp/spark-3.4.2-bin-hadoop3-scala2.13 /opt/spark
+RUN mv /tmp/spark-3.4.2-bin-hadoop3-scala2.13/* /opt/spark/
 RUN rm -rf ${SPARK_FILE_PATH}
 
 
@@ -97,10 +97,9 @@ ENV PYTHONPATH=$SPARK_HOME/python:$PYTHONPATH
 
 RUN curl -s "https://get.sdkman.io" | bash
 
-RUN /bin/bash -c "source $HOME/.sdkman/bin/sdkman-init.sh; sdk version; sdk install java ${JAVA_VERSION}; sdk install scala ${SCALA_VERSION}"
+RUN /bin/bash -c "source $HOME/.sdkman/bin/sdkman-init.sh; sdk version; sdk install java ${JAVA_VERSION}; sdk install scala ${SCALA_VERSION}; export JAVA_HOME=${SDKMAN_CANDIDATES_DIR}/java/${CURRENT}; export SCALA_HOME=${SDKMAN_CANDIDATES_DIR}/scala/${CURRENT}"
 
 # Copy appropriate entrpoint
 COPY spark_entrypoint.sh /usr/local/bin/
 
-# ENTRYPOINT spark_entrypoint.sh
-ENTRYPOINT ["/bin/bash"]
+ENTRYPOINT spark_entrypoint.sh

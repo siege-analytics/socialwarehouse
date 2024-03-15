@@ -1,16 +1,16 @@
 # Basic operations
 
 down:
-	docker-compose down
+	docker-compose down --remove-orphans
 
 stop:
-	docker compose stop
+	docker compose stop --remove-orphans
 
 up:
-	docker compose up -d
+	docker compose up -d --remove-orphans
 
 build:
-	docker compose stop
+	docker compose stop 
 	docker compose build
 	docker volume create --name=social_warehouse_pg_data
 

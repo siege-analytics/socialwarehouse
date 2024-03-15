@@ -31,6 +31,7 @@ Intended growth:
 - [How to make sdkman run in Dockerfile](16)
 - [GDAL Fix for Ubuntu](17)
 - [JAVA_HOME Variable for sdkman in Dockerfile](18)
+- [Adding sdkman into Dockerfile](19)
 
 [1]: http://www.siegeanalytics.com
 [2]: http://www.census.gov
@@ -50,3 +51,4 @@ Intended growth:
 [16]: https://stackoverflow.com/questions/62188599/cannot-build-dockerfile-with-sdkman
 [17]: https://gis.stackexchange.com/questions/28966/python-gdal-package-missing-header-file-when-installing-via-pip
 [18]: https://github.com/sdkman/sdkman-cli/issues/431
+[19]: https://stackoverflow.com/questions/53656537/install-sdkman-in-docker-image

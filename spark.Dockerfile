@@ -39,8 +39,7 @@ ENV HADOOP_HOME=${HADOOP_HOME:-"/opt/hadoop"}
 RUN mkdir -p ${HADOOP_HOME} && mkdir -p ${SPARK_HOME}
 WORKDIR ${SPARK_HOME}
 
-# Trying to add sdkman
-# https://stackoverflow.com/questions/53656537/install-sdkman-in-docker-image
+# Add sdkman
 
 RUN rm /bin/sh && ln -s /bin/bash /bin/sh
 RUN apt-get -qq -y install curl wget unzip zip

@@ -99,6 +99,9 @@ RUN curl -s "https://get.sdkman.io" | bash
 
 RUN /bin/bash -c "source $HOME/.sdkman/bin/sdkman-init.sh; sdk version; sdk install java ${JAVA_VERSION}; sdk install scala ${SCALA_VERSION}; export JAVA_HOME=${SDKMAN_CANDIDATES_DIR}/java/${CURRENT}; export SCALA_HOME=${SDKMAN_CANDIDATES_DIR}/scala/${CURRENT}"
 
+ENV JAVA_HOME /root/.sdkman/candidates/java/current/
+ENV SCALA_HOME /root/.sdkman/candidates/scala/current/
+
 # Copy appropriate entrpoint
 COPY spark_entrypoint.sh /usr/local/bin/
 

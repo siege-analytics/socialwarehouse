@@ -16,6 +16,7 @@ pygdaltools
 python-dotenv
 pyproj
 pysal
+pyspark
 requests
 scipy
 shapely

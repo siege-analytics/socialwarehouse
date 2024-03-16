@@ -15,7 +15,7 @@ build:
 	docker volume create --name=social_warehouse_pg_data
 
 rebuild:
-	docker compose stop --remove-orphans
+	docker compose stop
 	docker compose build --no-cache
 	docker volume create --name=social_warehouse_pg_data
 

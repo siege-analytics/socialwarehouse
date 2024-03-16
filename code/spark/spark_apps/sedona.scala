@@ -49,6 +49,4 @@ val cd_centroids_county_polygons_intersect_gdf = spark.sql("""
  WHERE ST_Contains(plgn.geometry, pnts.geometry)
 """)
 
-val cd_centroids_county_polygons_intersect_gdf = cb_2022_us_cd118_centroids_gdf.join(cb_2022_us_county_df,
-
 cd_centroids_county_polygons_intersect_gdf.show(100)

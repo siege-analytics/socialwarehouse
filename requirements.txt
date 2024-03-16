@@ -15,6 +15,7 @@ pygdaltools
 python-dotenv
 pyproj
 pysal
+pyspark
 requests
 scrapy
 snowflake-connector-python

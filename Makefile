@@ -1,17 +1,17 @@
 # Basic operations
 
 down:
-	docker-compose down --remove-orphans
+	docker-compose down # --remove-orphans
 
 stop:
-	docker compose stop --remove-orphans
+	docker compose stop # --remove-orphans
 
 up:
 	docker compose up -d --remove-orphans
 
 build:
-	docker compose stop --remove-orphans
-	docker compose build --remove-orphans
+	docker compose stop # --remove-orphans
+	docker compose build # --remove-orphans
 	docker volume create --name=social_warehouse_pg_data
 
 rebuild:

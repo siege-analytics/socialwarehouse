@@ -52,5 +52,3 @@ fetch_jars:
 	$(DKC) exec -T --index 3 maven mvn -U -DremoteRepositories=https://artifacts.unidata.ucar.edu/content/repositories/unidata-releases/ org.apache.maven.plugins:maven-dependency-plugin:3.1.2:get -Dartifact=edu.ucar:cdm-core:5.5.3 && \
 	$(DKC) exec -T --index 3 maven cp /root/.m2/repository/edu/ucar/cdm-core/5.5.3/cdm-core-5.5.3.jar ./jars/
 	$(DKC) down  # Bring down the services after completion
-
-

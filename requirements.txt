@@ -1,4 +1,5 @@
 beautifulsoup4
+cesiumpy
 dbt-core
 dbt-postgres
 dbt-redshift
@@ -16,15 +17,15 @@ python-dotenv
 pyproj
 pysal
 requests
+scipy
+shapely
 scrapy
 snowflake-connector-python
 sqlalchemy
 tobler
+traitlets
 ttictoc
 tqdm
-
-
-
 
 
 

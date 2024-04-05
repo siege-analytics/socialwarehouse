@@ -40,6 +40,8 @@ services:
       context: .
       dockerfile: spark.Dockerfile
     container_name: da-spark-worker
+    ports:
+      - '9091:8081'
     image: da-spark-worker
     entrypoint: ['spark_entrypoint.sh','worker']
     depends_on:

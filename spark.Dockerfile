@@ -85,7 +85,7 @@ ENV SPARK_MASTER_PORT 7077
 ENV PYSPARK_PYTHON python3
 
 # Copy the default configurations into $SPARK_HOME/conf
-COPY spark-defaults.conf "$SPARK_HOME/conf/"
+COPY spark-defaults.properties "$SPARK_HOME/conf/spark-defaults.conf"
 
 #RUN chmod u+x /opt/spark/sbin/* && \
 #    chmod u+x /opt/spark/bin/*

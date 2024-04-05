@@ -39,6 +39,7 @@ Ideally, you will be able to do everything from the `makefile` because the `dock
 - `clean` - this will terminate the containers, volumes and networks, and remove them.
 - `pg_shell` - this will create an `ssh` connection to the `PostgreSQL` server container.
 - `python_term` - this will create an `ssh` connection to the `Python` container
+- `fetch_jars` - this uses `maven` to get `jar` files that are used by `Spark` to operate. It will save them in the default location and you will need to move them to the `jars` directory in the project.
   
 ## References
 

@@ -21,22 +21,22 @@ services:
     ports:
       - '9090:8080'
       - '7077:7077'
-  spark-history-server:
-    build:
-      context: .
-      dockerfile: spark.Dockerfile
-    container_name: da-spark-history
-    image: da-spark-image
-    entrypoint: ['spark_entrypoint.sh', 'history']
-    depends_on:
-      - spark-master
-    env_file:
-      - ./.env_spark
-    volumes:
-      - ./code/spark/spark-logs:/opt/spark/spark-events
-      - ./spark-defaults.properties:/opt/spark/conf/spark-defaults.conf
-    ports:
-      - '18080:18080'
+  #spark-history-server:
+  #  build:
+  #    context: .
+  #    dockerfile: spark.Dockerfile
+  #  container_name: da-spark-history
+  #  image: da-spark-image
+  #  entrypoint: ['spark_entrypoint.sh', 'history']
+  #  depends_on:
+  #    - spark-master
+  #  env_file:
+  #    - ./.env_spark
+  #  volumes:
+  #    - ./code/spark/spark-logs:/opt/spark/spark-events
+  #    - ./spark-defaults.properties:/opt/spark/conf/spark-defaults.conf
+  #  ports:
+  #    - '18080:18080'
   spark-worker:
     build:
       context: .

@@ -11,13 +11,13 @@ Runs:
 
 - [PostgreSQL](5) + [PostGIS](6)
 - [Python](7)
-- [R](8)
-- [Geoserver](9)
+- [R](8) (NOT YET)
+- [Geoserver](9) (NOT YET)
 - [Zeppelin Notebook](10) 
-- [GeoTrellis](11)
+- [GeoTrellis](11) (NOT YET)
 - [Ubuntu](12)
 - [dbt](14)
-- [Spark](15)
+- [Spark](15) (FIXING)
 
 Data warehouse is built to enable longitudinal analysis from [Census](2) and [Bureau of Labour Statistics](3).
 Intended growth: 
@@ -26,6 +26,20 @@ Intended growth:
 - Media markets
 - Officials and jurisdictions
 
+## Using
+
+Ideally, you will be able to do everything from the `makefile` because the `docker-compose`
+ will have accounted for what you need to do. Here are some of the important `make` commands:
+
+- `down` - this will terminate the containers, volumes, networks and remove them. It's a last resort command.
+- `stop` - this will terminate the containers, volumes, networks, bringing them to a rest.
+- `up` - this will start containers, networks, volumes from rest and run them in detached mode.
+- `build` - this will build the containers, networks and volumes.
+- `rebuild` - this will build the containers, networks, volumes from nothing, not relying on cached resources.
+- `clean` - this will terminate the containers, volumes and networks, and remove them.
+- `pg_shell` - this will create an `ssh` connection to the `PostgreSQL` server container.
+- `python_term` - this will create an `ssh` connection to the `Python` container
+  
 ## References
 
 - [How to make sdkman run in Dockerfile](16)

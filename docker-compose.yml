@@ -52,6 +52,8 @@ services:
       - ./data:/opt/spark/data
       - ./code:/opt/spark/code
       - ./code:/spark/spark-logs:/opt/spark/spark-events
+    ports:
+      - '8081:8081'
   python_computation:
     container_name: python_computation
     build: .

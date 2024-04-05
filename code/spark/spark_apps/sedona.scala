@@ -3,7 +3,6 @@ import org.apache.sedona.core.formatMapper.shapefileParser.ShapefileReader
 import org.apache.sedona.sql.utils.Adapter
 
 val config = SedonaContext.builder()
-  .master("local[*]") // Delete this if run in cluster mode
   .appName("readTestScala") // Change this to a proper name
   .getOrCreate()
 

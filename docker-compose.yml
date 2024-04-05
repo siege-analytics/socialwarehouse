@@ -15,6 +15,7 @@ services:
     volumes:
       - ./code:/opt/spark/code
       - ./data:/opt/spark/data
+      - ./spark-defaults.properties:/opt/spark/conf/spark-defaults.properties
     env_file:
       - ./.env_spark
     ports:
@@ -32,7 +33,8 @@ services:
     env_file:
       - ./.env_spark
     volumes:
-      - .code/spark/spark-logs:/opt/spark/spark-events
+      - ./code/spark/spark-logs:/opt/spark/spark-events
+      - ./spark-defaults.properties:/opt/spark/conf/spark-defaults.properties
     ports:
       - '18080:18080'
   spark-worker:
@@ -52,6 +54,7 @@ services:
       - ./data:/opt/spark/data
       - ./code:/opt/spark/code
       - ./code:/spark/spark-logs:/opt/spark/spark-events
+      - ./spark-defaults.properties:/opt/spark/conf/spark-defaults.properties
     ports:
       - '8081:8081'
   python_computation:

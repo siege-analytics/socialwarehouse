@@ -15,12 +15,18 @@ services:
     volumes:
       - ./code:/opt/spark/code
       - ./data:/opt/spark/data
-    #  - ./spark-master-defaults.properties:/opt/spark/conf/spark-defaults.conf
+      - ./spark-master-defaults.properties:/opt/spark/conf/spark-defaults.conf
     env_file:
       - ./.env_spark
     ports:
-      - '9090:8080'
+      - '4040:4040'
       - '7077:7077'
+      - '9090:8080'
+      - '51810:51810'
+      - '51811:51811'
+      - '51812:51812'
+      - '51813:51813'
+      - '51814:51814'
   #spark-history-server:
   #  build:
   #    context: .
@@ -52,9 +58,10 @@ services:
       - ./data:/opt/spark/data
       - ./code:/opt/spark/code
       - ./code:/spark/spark-logs:/opt/spark/spark-events
-    #  - ./spark-worker-defaults.properties:/opt/spark/conf/spark-defaults.conf
+      - ./spark-worker-defaults.properties:/opt/spark/conf/spark-defaults.conf
     ports:
       - '8081:8081'
+      - '51815:51815'
   python_computation:
     container_name: python_computation
     build: .

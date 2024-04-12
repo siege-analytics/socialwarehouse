@@ -371,3 +371,8 @@ dmypy.json
 cython_debug/
 
 /NetrwTreeListing
+
+jars/
+
+# Maven
+.m2

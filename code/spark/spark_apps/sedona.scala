@@ -8,7 +8,7 @@ val config = SedonaContext.builder()
 
 val sedona = SedonaContext.create(config)
 
-val shapefilesInputLocation="./data/"
+val shapefilesInputLocation="/opt/spark/data/"
 
 val cb_2022_us_cd118_rdd = ShapefileReader.readToGeometryRDD(sedona.sparkContext, shapefilesInputLocation+"cb_2022_us_all_500k/cb_2022_us_cd118_500k")
 

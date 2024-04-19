@@ -49,7 +49,8 @@ services:
       dockerfile: spark.Dockerfile
     container_name: da-spark-worker
     ports:
-      - '9091:8081'
+     - '9091:8081'
+     - '51815:51815'
     image: da-spark-worker
     entrypoint: ['spark_entrypoint.sh','worker']
     depends_on:
@@ -61,9 +62,6 @@ services:
       - ./code:/opt/spark/code
       - ./code:/spark/spark-logs:/opt/spark/spark-events
       - ./spark-worker-defaults.properties:/opt/spark/conf/spark-defaults.conf
-    ports:
-      - '8081:8081'
-      - '51815:51815'
   python_computation:
     container_name: python_computation
     build: .

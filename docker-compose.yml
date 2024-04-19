@@ -1,0 +1,118 @@
+version: '3.8'
+services:
+  spark-master:
+    build:
+      context: .
+      dockerfile: spark.Dockerfile
+    container_name: da-spark-master
+    image: da-spark-image
+    entrypoint: ['spark_entrypoint.sh', 'master']
+    healthcheck:
+      test: ["CMD", "curl", "-f", "https://localhost:8080"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    volumes:
+      - ./code:/opt/spark/code
+      - ./data:/opt/spark/data
+      - ./spark-master-defaults.properties:/opt/spark/conf/spark-defaults.conf
+    env_file:
+      - ./.env_spark
+    ports:
+      - '4040:4040'
+      - '7077:7077'
+      - '9090:8080'
+      - '51810:51810'
+      - '51811:51811'
+      - '51812:51812'
+      - '51813:51813'
+      - '51814:51814'
+  #spark-history-server:
+  #  build:
+  #    context: .
+  #    dockerfile: spark.Dockerfile
+  #  container_name: da-spark-history
+  #  image: da-spark-image
+  #  entrypoint: ['spark_entrypoint.sh', 'history']
+  #  depends_on:
+  #    - spark-master
+  #  env_file:
+  #    - ./.env_spark
+  #  volumes:
+  #    - ./code/spark/spark-logs:/opt/spark/spark-events
+  #    - ./spark-defaults.properties:/opt/spark/conf/spark-defaults.conf
+  #  ports:
+  #    - '18080:18080'
+  spark-worker:
+    build:
+      context: .
+      dockerfile: spark.Dockerfile
+    container_name: da-spark-worker
+    ports:
+     - '9091:8081'
+     - '51815:51815'
+    image: da-spark-worker
+    entrypoint: ['spark_entrypoint.sh','worker']
+    depends_on:
+      - spark-master
+    env_file:
+      - .env_spark
+    volumes:
+      - ./data:/opt/spark/data
+      - ./code:/opt/spark/code
+      - ./code:/spark/spark-logs:/opt/spark/spark-events
+      - ./spark-worker-defaults.properties:/opt/spark/conf/spark-defaults.conf
+  python_computation:
+    container_name: python_computation
+    build: .
+    environment:
+      - POSTGRES_HOST=postgis
+      - POSTGRES_DB=gis
+      - POSTGRES_PASSWORD=dessert
+      - POSTGRES_USER=dheerajchand
+    volumes:
+      - .:/opt/social_warehouse/
+    restart: always
+    networks:
+      - social_warehouse_network
+  postgis:
+    image: postgis/postgis:13-master
+    container_name: postgis
+    environment:
+      - POSTGRES_DB=gis
+      - POSTGRES_PASSWORD=dessert
+      - POSTGRES_USER=dheerajchand
+      - POSTGRES_HOST_AUTH_METHOD=password
+    ports:
+      - 54324:5432
+    volumes:
+      - social_warehouse_pg_data:/var/lib/postgresql
+    restart: always
+    networks:
+      - social_warehouse_network
+  zeppelin:
+    image: apache/zeppelin:0.10.1
+    container_name: zeppelin
+    ports:
+      - 8082:8080
+    restart: always
+    environment:
+      - ZEPPELIN_IN_DOCKER=true
+    networks:
+      - social_warehouse_network
+    depends_on:
+      - postgis
+
+  maven:
+    image: maven:3.6.3-jdk-11
+    volumes:
+      - ./.m2:/root/.m2
+      - ./jars:/usr/src/app/jars
+    working_dir: /usr/src/app
+    command: sh -c "while true; do sleep 3600; done"
+
+volumes:
+  social_warehouse_pg_data:
+  spark_logs:
+networks:
+  social_warehouse_network:

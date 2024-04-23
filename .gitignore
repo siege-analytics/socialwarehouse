@@ -53,6 +53,11 @@ data/outputs/**/*.*
 # *.iml
 # *.ipr
 
+# Maven
+.m2
+
+jars/
+
 # CMake
 cmake-build-*/
 
@@ -372,7 +377,6 @@ cython_debug/
 
 /NetrwTreeListing
 
-jars/
+# Generated docker compose files
+docker-compose.yml
 
-# Maven
-.m2

@@ -1,17 +1,81 @@
 
-# Variables
+# # #
+# Configure Run Environment
+#
+
+# export DKC=docker-compose for docker-compose v1
 DKC ?= docker compose
 
-# Basic operations
+# modest performance improvement since we aren't compiling C code
+MAKEFLAGS += --no-builtin-rules 
+.SUFFIXES: # cancel suffix rules
 
-down:
+# # #
+# Jobs
+
+pg_shell:
+	$(DKC) exec postgis psql -U dheerajchand -d gis
+
+python_term:
+	$(DKC) exec python /bin/bash
+
+# # #
+# Docker Compose Profiles
+#
+
+# # #
+# include YAML files docker/*.yml
+# *.profile.* files sorted first
+define compose-profile-includes
+$(strip \
+	$(shell find docker -type f -name '*.profile.*' | sort) \
+	$(shell find docker -type f -name '*.yml' | sort) \
+)
+endef
+
+# default to all profiles
+COMPOSE_FILES ?= ${compose-profile-includes}
+
+ifdef DEBUG
+$(info COMPOSE_FILES=${COMPOSE_FILES})
+endif
+
+docker-compose.yml: .env ${COMPOSE_FILES}
+ifndef COMPOSE_FILES
+	$(error COMPOSE_FILES is not set)
+endif
+	$(DKC) $(foreach f,$(filter-out .env,$^),-f $f) config > $@ $(if ${DEBUG},,2>/dev/null)
+
+
+# # #
+# include ENV files conf/*.env
+define compose-env-includes
+$(strip \
+	$(shell find conf -type f -name '*.env' | sort) \
+)
+endef
+
+# default to all env files
+COMPOSE_ENV_FILES ?= ${compose-env-includes}
+
+ifdef DEBUG
+$(info COMPOSE_ENV_FILES=${COMPOSE_ENV_FILES})
+endif
+
+.env: ${COMPOSE_ENV_FILES}
+ifndef COMPOSE_ENV_FILES
+	$(error COMPOSE_ENV_FILES is not set)
+endif
+	@cat $^ >$@
+
+# # #
+# Docker Compose Service Commands
+
+up: .env docker-compose.yml
+	$(DKC) up -d
+
+down: .env docker-compose.yml
 	$(DKC) down --remove-orphans
-
-stop:
-	$(DKC) stop --remove-orphans
-
-up:
-	$(DKC) up -d --remove-orphans
 
 build:
 	$(DKC) stop --remove-orphans
@@ -27,12 +91,9 @@ clean:
 	$(DKC) down --remove-orphans
 	$(DKC) rm --remove-orphans
 
-pg_shell:
-	$(DKC) exec postgis psql -U dheerajchand -d gis
-
-python_term:
-	$(DKC) exec python /bin/bash
-
+# # #
+# Setup
+#
 
 # probably too aggressive
 clean_jars:

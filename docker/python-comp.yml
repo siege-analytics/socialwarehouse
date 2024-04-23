@@ -1,0 +1,13 @@
+
+services:
+
+  python-computation:
+    image: swh-python-image
+    build:
+      context: docker/python-computation
+    environment:
+      - POSTGRES_HOST
+      - POSTGRES_DB
+      - POSTGRES_PASSWORD
+      - POSTGRES_USER
+

@@ -199,7 +199,7 @@ flycheck_*.el
 
 
 ### VisualStudioCode template
-.vscode/*
+.vscode
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
@@ -380,3 +380,6 @@ cython_debug/
 # Generated docker compose files
 docker-compose.yml
 
+# Metals VS Code Extension
+.metals
+.scala-build

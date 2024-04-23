@@ -26,6 +26,14 @@ Intended growth:
 - Media markets
 - Officials and jurisdictions
 
+## Known problems
+
+There is a small problem with the filesystem for now. If you want jobs to run, they have to be in the duplicated in the same path on your 
+local machine and on the Spark machines.  I will solve this with MinIO down the line, which will require you installing a MinIO client on your
+local machine.
+
+This is not ideal, but it is progress.
+
 ## References
 
 - [How to make sdkman run in Dockerfile](16)

@@ -21,10 +21,10 @@ MAKEFLAGS += --no-builtin-rules
 # Jobs
 
 pg_shell:
-	$(DKC) exec postgis psql -U dheerajchand -d gis
+	$(DKC) exec postgis psql -U socialwarehouse -d gis
 
 python_term:
-	$(DKC) exec python /bin/bash
+	$(DKC) exec python-computation /bin/bash
 
 # # #
 # Docker Compose Profiles

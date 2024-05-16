@@ -1,4 +1,4 @@
-FROM ubuntu:latest as spark-base
+FROM ubuntu:jammy as spark-base
 ENV DEBIAN_FRONTEND noninteractive
 
 ARG SPARK_VERSION='3.4.2'

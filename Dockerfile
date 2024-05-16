@@ -1,4 +1,4 @@
-FROM ubuntu:latest
+FROM ubuntu:jammy
 ENV DEBIAN_FRONTEND noninteractive
 
 ARG GDAL_VERSION=3.4.1

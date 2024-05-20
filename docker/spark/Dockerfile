@@ -47,7 +47,7 @@ RUN apt-get -qq -y install curl wget unzip zip
 RUN curl -s "https://get.sdkman.io" | bash
 RUN source "$HOME/.sdkman/bin/sdkman-init.sh"
 
-from spark-base as pyspark
+FROM spark-base as pyspark
 
 # Download and install Spark
 # Spark URL has changed : https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop3-scala${SCALA_VERSION}.tgz
@@ -85,7 +85,7 @@ ENV SPARK_MASTER_PORT 7077
 ENV PYSPARK_PYTHON python3
 
 # Copy the default configurations into $SPARK_HOME/conf
-COPY ./code/config_files/spark-defaults.conf "$SPARK_HOME/conf/"
+COPY spark-master-defaults.properties "$SPARK_HOME/conf/spark-defaults.conf"
 
 #RUN chmod u+x /opt/spark/sbin/* && \
 #    chmod u+x /opt/spark/bin/*

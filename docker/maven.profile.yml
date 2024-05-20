@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+
+  maven:
+    image: maven:3.6.3-jdk-11
+    volumes:
+      - ./.m2:/root/.m2
+      - ./jars:/usr/src/app/jars
+    working_dir: /usr/src/app
+    command: sh -c "while true; do sleep 3600; done"

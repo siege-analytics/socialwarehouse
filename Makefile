@@ -1,38 +1,107 @@
 
-# Variables
+# # #
+# Configure Run Environment
+#
+
 DKC ?= docker compose
+# uncomment for docker-compose v1
+# DKC ?= docker-compose.
 
-# Basic operations
+DKC_PROJ_DIR ?= .
+# set the appropriate project directory flag depending on docker-compose version
+# 1.x uses -p, 2.x uses --project-directory
+# only used (as of this time) when generating the docker-compose.yml
+DKC_PROJ_DIR := $(shell $(DKC) version --short | grep -q '1\.' && echo -p || echo --project-directory) ${DKC_PROJ_DIR}
 
-down:
+# modest performance improvement since we aren't compiling C code
+MAKEFLAGS += --no-builtin-rules
+.SUFFIXES: # cancel suffix rules
+
+# # #
+# Jobs
+
+pg_shell:
+	$(DKC) exec postgis psql -U socialwarehouse -d gis
+
+python_term:
+	$(DKC) exec python-computation /bin/bash
+
+# # #
+# Docker Compose Profiles
+#
+
+# # #
+# include YAML files docker/*.yml
+# *.profile.* files sorted first
+define compose-profile-includes
+$(strip \
+	$(shell find docker -type f -name '*.profile.yml' | sort) \
+	$(shell find docker -type f -name '*.yml' | grep -v profile | sort) \
+)
+endef
+
+# default to all profile.yml and .yml files
+COMPOSE_FILES ?= ${compose-profile-includes}
+
+ifdef DEBUG
+$(info COMPOSE_FILES=${COMPOSE_FILES})
+endif
+
+docker-compose.yml: .env ${COMPOSE_FILES}
+ifndef COMPOSE_FILES
+	$(error COMPOSE_FILES is not set)
+endif
+	@# We set --project-directory so that we can store our profiles in a
+	@# subdirectory without changing the base path.
+	$(DKC) ${DKC_PROJ_DIR} $(foreach f,$(filter-out .env,$^),-f $f) config > $@ $(if ${DEBUG},,2>/dev/null)
+
+# # #
+# include ENV files conf/*.env
+define compose-env-includes
+$(strip \
+	$(shell find conf -type f -name '*.env' | sort) \
+)
+endef
+
+# default to all env files
+COMPOSE_ENV_FILES ?= ${compose-env-includes}
+
+ifdef DEBUG
+$(info COMPOSE_ENV_FILES=${COMPOSE_ENV_FILES})
+endif
+
+.env: ${COMPOSE_ENV_FILES}
+ifndef COMPOSE_ENV_FILES
+	$(error COMPOSE_ENV_FILES is not set)
+endif
+	@cat $^ >$@
+
+# # #
+# Docker Compose Service Commands
+
+up: .env docker-compose.yml
+	$(DKC) up -d
+
+down: .env docker-compose.yml
 	$(DKC) down --remove-orphans
 
-stop:
-	$(DKC) stop --remove-orphans
-
-up:
-	$(DKC) up -d --remove-orphans
-
-build:
-	$(DKC) stop --remove-orphans
-	$(DKC) build --remove-orphans
-	docker volume create --name=social_warehouse_pg_data
+build: .env docker-compose.yml
+	$(DKC) stop
+	$(DKC) build
+	# docker volume create --name=swh_pg_data
 
 rebuild:
 	$(DKC) stop
 	$(DKC) build --no-cache
-	docker volume create --name=social_warehouse_pg_data
+	@# docker volume create --name=swh_pg_data
 
 clean:
 	$(DKC) down --remove-orphans
-	$(DKC) rm --remove-orphans
+	rm -f docker-compose.yml .env
 
-pg_shell:
-	$(DKC) exec postgis psql -U dheerajchand -d gis
-
-python_term:
-	$(DKC) exec python /bin/bash
-
+# # #
+# Setup
+#
 
 # probably too aggressive
 clean_jars:

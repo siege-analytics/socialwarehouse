@@ -53,6 +53,11 @@ data/outputs/**/*.*
 # *.iml
 # *.ipr
 
+# Maven
+.m2
+
+jars/
+
 # CMake
 cmake-build-*/
 
@@ -194,7 +199,7 @@ flycheck_*.el
 
 
 ### VisualStudioCode template
-.vscode/*
+.vscode
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
@@ -372,7 +377,9 @@ cython_debug/
 
 /NetrwTreeListing
 
-jars/
+# Generated docker compose files
+docker-compose.yml
 
-# Maven
-.m2
+# Metals VS Code Extension
+.metals
+.scala-build

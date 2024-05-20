@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+
+  spark-master:
+    image: swh-spark-image
+    build:
+      context: docker/spark
+    # entrypoint: ['spark_entrypoint.sh', 'master']

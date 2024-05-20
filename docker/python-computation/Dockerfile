@@ -21,6 +21,7 @@ RUN apt-get clean && apt-get update \
 
 # Python tasks
 
+ENV PYTHON_VENV_PATH=${PYTHON_VENV_PATH:-"/opt/venv"}
 RUN python3 -m venv ${PYTHON_VENV_PATH}
 ENV PATH="${PYTHON_VENV_PATH}/bin:$PATH"
 

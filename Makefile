@@ -74,6 +74,12 @@ endif
 ifndef COMPOSE_ENV_FILES
 	$(error COMPOSE_ENV_FILES is not set)
 endif
+	@# Ensure that each file ends with a newline
+	@for file in $^; do \
+		if [ -n "$$(tail -c 1 "$$file" | tr -d '\n')" ]; then \
+			echo >> "$$file"; \
+		fi; \
+	done
 	@cat $^ >$@
 
 # # #

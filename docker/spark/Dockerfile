@@ -1,4 +1,8 @@
-FROM ubuntu:latest as spark-base
+# Args from compose
+ARG UBUNTU_BASE_IMAGE
+ARG PYTHON_VENV_PATH
+
+FROM ${UBUNTU_BASE_IMAGE}
 ENV DEBIAN_FRONTEND noninteractive
 
 ARG SPARK_VERSION='3.4.2'
@@ -61,7 +65,10 @@ RUN tar -xvzf ${SPARK_FILE_PATH} --directory /tmp
 RUN mv /tmp/spark-3.4.2-bin-hadoop3-scala2.13/* /opt/spark/
 RUN rm -rf ${SPARK_FILE_PATH}
 
+# Python tasks
 
+RUN python3 -m venv ${PYTHON_VENV_PATH}
+ENV PATH="${PYTHON_VENV_PATH}/bin:$PATH"
 
 # trying out GDAL fix
 
@@ -69,9 +76,10 @@ RUN apt-get install -y --install-recommends libgdal-dev
 RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal
 RUN export C_INCLUDE_PATH=/usr/include/gdal
 RUN pip3 install --upgrade pip
-RUN pip3 install gdal==3.4.1
-##
-## Python
+# RUN pip3 install gdal
+
+# Python
+
 COPY spark_requirements.txt .
 RUN pip3 install --upgrade pip
 RUN pip3 install -r spark_requirements.txt

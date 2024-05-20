@@ -4,6 +4,9 @@ services:
   python-computation:
     image: swh-python-image
     build:
+      args:
+        - UBUNTU_BASE_IMAGE
+        - PYTHON_VENV_PATH
       context: docker/python-computation
     environment:
       - POSTGRES_HOST

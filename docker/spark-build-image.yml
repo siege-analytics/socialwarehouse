@@ -6,4 +6,7 @@ services:
     image: swh-spark-image
     build:
       context: docker/spark
+      args:
+        - UBUNTU_BASE_IMAGE
+        - PYTHON_VENV_PATH
     # entrypoint: ['spark_entrypoint.sh', 'master']

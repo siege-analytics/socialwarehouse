@@ -47,6 +47,7 @@ Ideally, you will be able to do everything from the `makefile` because the `dock
 - [GDAL Fix for Ubuntu](17)
 - [JAVA_HOME Variable for sdkman in Dockerfile](18)
 - [Adding sdkman into Dockerfile](19)
+- [Running a Python Venv in Dockerfile](20)
 
 [1]: http://www.siegeanalytics.com
 [2]: http://www.census.gov
@@ -67,3 +68,4 @@ Ideally, you will be able to do everything from the `makefile` because the `dock
 [17]: https://gis.stackexchange.com/questions/28966/python-gdal-package-missing-header-file-when-installing-via-pip
 [18]: https://github.com/sdkman/sdkman-cli/issues/431
 [19]: https://stackoverflow.com/questions/53656537/install-sdkman-in-docker-image
+[20]: https://pythonspeed.com/articles/activate-virtualenv-dockerfile/

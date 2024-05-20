@@ -24,6 +24,8 @@ RUN apt-get install -y --install-recommends \
         software-properties-common \
         ssh \
         python3-pip \
+        python3-pyproj \
+        python3-venv \
         gdal-bin \
         libgdal-dev  \
         python3-pyproj \
@@ -77,7 +79,7 @@ RUN apt-get install -y --install-recommends libgdal-dev
 RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal
 RUN export C_INCLUDE_PATH=/usr/include/gdal
 RUN pip3 install --upgrade pip
-# RUN pip3 install gdal
+RUN pip install GDAL=="$(gdal-config --version).*"
 
 # Python
 

@@ -31,9 +31,13 @@ ADD entrypoint.sh /usr/local/bin/
 # trying out GDAL fix
 # https://gis.stackexchange.com/questions/28966/python-gdal-package-missing-header-file-when-installing-via-pip
 
+# trying out GDAL fix
+
 RUN apt-get install -y --install-recommends libgdal-dev
 RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal
 RUN export C_INCLUDE_PATH=/usr/include/gdal
+RUN pip3 install --upgrade pip
+RUN pip install GDAL=="$(gdal-config --version).*"
 
 # RUN pip3 install gdal
 

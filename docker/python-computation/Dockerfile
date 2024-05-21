@@ -1,52 +1,47 @@
 # Args from compose
 ARG UBUNTU_BASE_IMAGE
-ARG PYTHON_VENV_PATH
-
 FROM ${UBUNTU_BASE_IMAGE}
-ENV DEBIAN_FRONTEND noninteractive
+
+ARG PYTHON_VENV_PATH
+ARG DEBIAN_FRONTEND noninteractive
 
 # Install the basics
-RUN apt-get clean && apt-get update \
-    && apt-get install -y python3-pip \
-    python3-venv \
-    gdal-bin \
-    python3-pyproj \
+RUN apt-get update && apt-get install -y tzdata
+RUN apt-get install -y \
     build-essential \
     wget \
     ca-certificates \
+    python3-pip \
+    python3-venv \
+    python3-pyproj \
+    gdal-bin \
     postgresql  \
     postgresql-contrib \
     postgis \
-    vim
+    vim \
+    && apt-get clean
 
+#
 # Python tasks
+#
 
-ENV PYTHON_VENV_PATH=${PYTHON_VENV_PATH:-"/opt/venv"}
 RUN python3 -m venv ${PYTHON_VENV_PATH}
 ENV PATH="${PYTHON_VENV_PATH}/bin:$PATH"
 
-ADD requirements.txt /tmp/
-ADD entrypoint.sh /usr/local/bin/
-
-# trying out GDAL fix
-# https://gis.stackexchange.com/questions/28966/python-gdal-package-missing-header-file-when-installing-via-pip
-
-# trying out GDAL fix
-
+# Install GDAL
 RUN apt-get install -y --install-recommends libgdal-dev
 RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal
 RUN export C_INCLUDE_PATH=/usr/include/gdal
 RUN pip3 install --upgrade pip
 RUN pip install GDAL=="$(gdal-config --version).*"
 
-# RUN pip3 install gdal
-
 # Install PIP requirements
-
+ADD requirements.txt /tmp/
 RUN pip3 install -r /tmp/requirements.txt
 
 WORKDIR /opt/social_warehouse
 
+ADD entrypoint.sh /usr/local/bin/
 ENTRYPOINT entrypoint.sh
 
 CMD python3 --version

@@ -28,11 +28,11 @@ python_term:
 
 # # #
 # include YAML files docker/*.yml
-# *.profile.* files sorted first
+# *.profile.* files sorted last
 define compose-profile-includes
 $(strip \
-	$(shell find docker -type f -name '*.profile.yml' | sort) \
 	$(shell find docker -type f -name '*.yml' | grep -v profile | sort) \
+	$(shell find docker -type f -name '*.profile.yml' | sort) \
 )
 endef
 
@@ -98,7 +98,7 @@ build: .env docker-compose.yml
 	$(DKC) build
 	# docker volume create --name=swh_pg_data
 
-rebuild:
+rebuild: .env docker-compose.yml
 	$(DKC) stop
 	$(DKC) build --no-cache
 	@# docker volume create --name=swh_pg_data
@@ -106,6 +106,9 @@ rebuild:
 clean:
 	$(DKC) down --remove-orphans
 	rm -f docker-compose.yml .env
+
+prune:
+	docker container prune
 
 # # #
 # Setup

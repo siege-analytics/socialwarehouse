@@ -4,14 +4,10 @@
 #
 
 DKC ?= docker compose
-# uncomment for docker-compose v1
-# DKC ?= docker-compose.
 
-DKC_PROJ_DIR ?= .
-# set the appropriate project directory flag depending on docker-compose version
-# 1.x uses -p, 2.x uses --project-directory
+# set the project directory to the repo root by default
 # only used (as of this time) when generating the docker-compose.yml
-DKC_PROJ_DIR := $(shell $(DKC) version --short | grep -q '1\.' && echo -p || echo --project-directory) ${DKC_PROJ_DIR}
+DKC_PROJ_DIR ?= .
 
 # modest performance improvement since we aren't compiling C code
 MAKEFLAGS += --no-builtin-rules
@@ -32,11 +28,11 @@ python_term:
 
 # # #
 # include YAML files docker/*.yml
-# *.profile.* files sorted first
+# *.profile.* files sorted last
 define compose-profile-includes
 $(strip \
-	$(shell find docker -type f -name '*.profile.yml' | sort) \
 	$(shell find docker -type f -name '*.yml' | grep -v profile | sort) \
+	$(shell find docker -type f -name '*.profile.yml' | sort) \
 )
 endef
 
@@ -51,9 +47,12 @@ docker-compose.yml: .env ${COMPOSE_FILES}
 ifndef COMPOSE_FILES
 	$(error COMPOSE_FILES is not set)
 endif
+	@ echo '# ' > $@
+	@ echo '# WARNING: Generated Configuration using - $^' >> $@
+	@ echo '# ' >> $@
 	@# We set --project-directory so that we can store our profiles in a
 	@# subdirectory without changing the base path.
-	$(DKC) ${DKC_PROJ_DIR} $(foreach f,$(filter-out .env,$^),-f $f) config > $@ $(if ${DEBUG},,2>/dev/null)
+	$(DKC) --project-directory ${DKC_PROJ_DIR} $(foreach f,$(filter-out .env,$^),-f $f) config >> $@ $(if ${DEBUG},,2>/dev/null)
 
 # # #
 # include ENV files conf/*.env
@@ -80,7 +79,10 @@ endif
 			echo >> "$$file"; \
 		fi; \
 	done
-	@cat $^ >$@
+	@ echo '# ' > $@
+	@ echo '# WARNING: Generated Configuration using - $^' >> $@
+	@ echo '# ' >> $@
+	@cat $^ >>$@
 
 # # #
 # Docker Compose Service Commands
@@ -96,7 +98,7 @@ build: .env docker-compose.yml
 	$(DKC) build
 	# docker volume create --name=swh_pg_data
 
-rebuild:
+rebuild: .env docker-compose.yml
 	$(DKC) stop
 	$(DKC) build --no-cache
 	@# docker volume create --name=swh_pg_data
@@ -104,6 +106,9 @@ rebuild:
 clean:
 	$(DKC) down --remove-orphans
 	rm -f docker-compose.yml .env
+
+prune:
+	docker container prune
 
 # # #
 # Setup

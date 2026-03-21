@@ -1,136 +1,105 @@
-
-# # #
-# Configure Run Environment
+# Social Warehouse — Makefile
+# https://github.com/siege-analytics/socialwarehouse
 #
+# Targets are grouped: services, shells, spark, setup.
+# Run `make help` to list them all.
 
 DKC ?= docker compose
 
-# set the project directory to the repo root by default
-# only used (as of this time) when generating the docker-compose.yml
-DKC_PROJ_DIR ?= .
+# ---------------------------------------------------------------------------
+# Services
+# ---------------------------------------------------------------------------
 
-# modest performance improvement since we aren't compiling C code
-MAKEFLAGS += --no-builtin-rules
-.SUFFIXES: # cancel suffix rules
+.PHONY: up down build rebuild clean prune help
 
-# # #
-# Jobs
-
-pg_shell:
-	$(DKC) exec postgis psql -U socialwarehouse -d gis
-
-python_term:
-	$(DKC) exec python-computation /bin/bash
-
-# # #
-# Docker Compose Profiles
-#
-
-# # #
-# include YAML files docker/*.yml
-# *.profile.* files sorted last
-define compose-profile-includes
-$(strip \
-	$(shell find docker -type f -name '*.yml' | grep -v profile | sort) \
-	$(shell find docker -type f -name '*.profile.yml' | sort) \
-)
-endef
-
-# default to all profile.yml and .yml files
-COMPOSE_FILES ?= ${compose-profile-includes}
-
-ifdef DEBUG
-$(info COMPOSE_FILES=${COMPOSE_FILES})
-endif
-
-docker-compose.yml: .env ${COMPOSE_FILES}
-ifndef COMPOSE_FILES
-	$(error COMPOSE_FILES is not set)
-endif
-	@ echo '# ' > $@
-	@ echo '# WARNING: Generated Configuration using - $^' >> $@
-	@ echo '# ' >> $@
-	@# We set --project-directory so that we can store our profiles in a
-	@# subdirectory without changing the base path.
-	$(DKC) --project-directory ${DKC_PROJ_DIR} $(foreach f,$(filter-out .env,$^),-f $f) config >> $@ $(if ${DEBUG},,2>/dev/null)
-
-# # #
-# include ENV files conf/*.env
-define compose-env-includes
-$(strip \
-	$(shell find conf -type f -name '*.env' | sort) \
-)
-endef
-
-# default to all env files
-COMPOSE_ENV_FILES ?= ${compose-env-includes}
-
-ifdef DEBUG
-$(info COMPOSE_ENV_FILES=${COMPOSE_ENV_FILES})
-endif
-
-.env: ${COMPOSE_ENV_FILES}
-ifndef COMPOSE_ENV_FILES
-	$(error COMPOSE_ENV_FILES is not set)
-endif
-	@# Ensure that each file ends with a newline
-	@for file in $^; do \
-		if [ -n "$$(tail -c 1 "$$file" | tr -d '\n')" ]; then \
-			echo >> "$$file"; \
-		fi; \
-	done
-	@ echo '# ' > $@
-	@ echo '# WARNING: Generated Configuration using - $^' >> $@
-	@ echo '# ' >> $@
-	@cat $^ >>$@
-
-# # #
-# Docker Compose Service Commands
-
-up: .env docker-compose.yml
+up:  ## Start PostGIS + Python (default profile)
 	$(DKC) up -d
 
-down: .env docker-compose.yml
+up-spark:  ## Start with Spark cluster
+	$(DKC) --profile spark up -d
+
+up-full:  ## Start everything (Spark + Zeppelin + Maven)
+	$(DKC) --profile full up -d
+
+down:  ## Stop all services
 	$(DKC) down --remove-orphans
 
-build: .env docker-compose.yml
-	$(DKC) stop
+build:  ## Build images
 	$(DKC) build
-	# docker volume create --name=swh_pg_data
 
-rebuild: .env docker-compose.yml
-	$(DKC) stop
+build-spark:  ## Build images including Spark
+	$(DKC) --profile spark build
+
+rebuild:  ## Rebuild images from scratch (no cache)
 	$(DKC) build --no-cache
-	@# docker volume create --name=swh_pg_data
 
-clean:
-	$(DKC) down --remove-orphans
-	rm -f docker-compose.yml .env
+clean:  ## Stop services and remove volumes
+	$(DKC) down --remove-orphans -v
 
-prune:
-	docker container prune
+prune:  ## Remove stopped containers system-wide
+	docker container prune -f
 
-# # #
-# Setup
-#
+# ---------------------------------------------------------------------------
+# Shells
+# ---------------------------------------------------------------------------
 
-# probably too aggressive
-clean_jars:
-	rm -rf ./jars
-	mkdir ./jars
+.PHONY: pg-shell python-shell spark-shell
 
-fetch_jars:
-	$(DKC) down
-	$(DKC) up -d --scale maven=3  maven # Scale up the Maven service - add more if desired
-	#
-	$(DKC) exec -T --index 1 maven mvn -U org.apache.maven.plugins:maven-dependency-plugin:3.1.2:get -Dartifact=org.apache.sedona:sedona-spark-shaded-3.4_2.13:1.5.1 && \
-	$(DKC) exec -T --index 1 maven cp /root/.m2/repository/org/apache/sedona/sedona-spark-shaded-3.4_2.13/1.5.1/sedona-spark-shaded-3.4_2.13-1.5.1.jar ./jars/
-	#
-	$(DKC) exec -T --index 2 maven mvn -U org.apache.maven.plugins:maven-dependency-plugin:3.1.2:get -Dartifact=org.datasyslab:geotools-wrapper:1.5.1-28.2 && \
-	$(DKC) exec -T --index 2 maven cp /root/.m2/repository/org/datasyslab/geotools-wrapper/1.5.1-28.2/geotools-wrapper-1.5.1-28.2.jar ./jars/
-	#
-	$(DKC) exec -T --index 3 maven mvn -U -DremoteRepositories=https://artifacts.unidata.ucar.edu/content/repositories/unidata-releases/ org.apache.maven.plugins:maven-dependency-plugin:3.1.2:get -Dartifact=edu.ucar:cdm-core:5.5.3 && \
-	$(DKC) exec -T --index 3 maven cp /root/.m2/repository/edu/ucar/cdm-core/5.5.3/cdm-core-5.5.3.jar ./jars/
-	$(DKC) down  # Bring down the services after completion
+pg-shell:  ## Open a psql shell
+	$(DKC) exec postgis psql -U $${POSTGRES_USER} -d $${POSTGRES_DB}
 
+python-shell:  ## Open a bash shell in the Python container
+	$(DKC) exec python-computation /bin/bash
 
+spark-shell:  ## Open spark-shell on the master
+	$(DKC) exec spark-master spark-shell
+
+# ---------------------------------------------------------------------------
+# Spark / Sedona JARs
+# ---------------------------------------------------------------------------
+
+SEDONA_VERSION  ?= 1.5.1
+GEOTOOLS_VERSION ?= 1.5.1-28.2
+
+.PHONY: fetch-jars clean-jars
+
+fetch-jars:  ## Download Sedona + GeoTools JARs via Maven
+	$(DKC) --profile full up -d maven
+	$(DKC) exec maven mvn -U \
+		org.apache.maven.plugins:maven-dependency-plugin:3.6.1:get \
+		-Dartifact=org.apache.sedona:sedona-spark-shaded-3.4_2.13:$(SEDONA_VERSION)
+	$(DKC) exec maven cp \
+		/root/.m2/repository/org/apache/sedona/sedona-spark-shaded-3.4_2.13/$(SEDONA_VERSION)/sedona-spark-shaded-3.4_2.13-$(SEDONA_VERSION).jar \
+		./jars/
+	$(DKC) exec maven mvn -U \
+		org.apache.maven.plugins:maven-dependency-plugin:3.6.1:get \
+		-Dartifact=org.datasyslab:geotools-wrapper:$(GEOTOOLS_VERSION)
+	$(DKC) exec maven cp \
+		/root/.m2/repository/org/datasyslab/geotools-wrapper/$(GEOTOOLS_VERSION)/geotools-wrapper-$(GEOTOOLS_VERSION).jar \
+		./jars/
+	$(DKC) stop maven
+
+clean-jars:  ## Remove downloaded JARs
+	rm -rf ./jars/*.jar
+
+# ---------------------------------------------------------------------------
+# Census data (via siege_utilities inside the Python container)
+# ---------------------------------------------------------------------------
+
+.PHONY: download-census load-census
+
+download-census:  ## Download Census TIGER shapefiles
+	$(DKC) exec python-computation python -m swh.cli download-census
+
+load-census:  ## Load Census shapefiles into PostGIS
+	$(DKC) exec python-computation python -m swh.cli load-census
+
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
+
+help:  ## Show this help message
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
+
+.DEFAULT_GOAL := help

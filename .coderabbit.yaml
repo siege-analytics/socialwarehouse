@@ -1,0 +1,55 @@
+# CodeRabbit AI Code Review Configuration
+# https://docs.coderabbit.ai/getting-started/yaml-configuration
+#
+# This file configures automated PR reviews for the Social Warehouse repo.
+# Install the CodeRabbit GitHub App first: https://coderabbit.ai
+# This config takes precedence over UI settings when present.
+
+language: en-US
+
+reviews:
+  # Automatically review every PR
+  auto_review:
+    enabled: true
+    # Don't review draft PRs until they're marked ready
+    drafts: false
+    # Only review when these base branches are targeted
+    base_branches:
+      - main
+      - develop
+
+  # Generate a high-level summary at the top of each review
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+
+  # Path-specific review instructions — tell CodeRabbit what to focus on
+  path_instructions:
+    - path: "swh/**/*.py"
+      instructions: >
+        This is a Python package that wraps siege_utilities for Census data
+        downloading and PostGIS loading. Check for proper error handling,
+        type hints, and that siege_utilities API calls match the expected
+        interface. Ensure no credentials are hardcoded.
+
+    - path: "docker/**"
+      instructions: >
+        Review Dockerfiles for security best practices: no running as root
+        in production, minimal attack surface, proper layer caching.
+        Check docker-compose.yml for correct profile assignments.
+
+    - path: "Makefile"
+      instructions: >
+        Ensure Makefile targets are well-documented with ## comments for
+        the help target. Check that docker compose commands use the correct
+        profile flags.
+
+  # Files to skip during review
+  path_filters:
+    - "!**/.gitkeep"
+    - "!**/spark-*-defaults.properties"
+    - "!docs/**"
+    - "!jars/**"
+
+chat:
+  auto_reply: true

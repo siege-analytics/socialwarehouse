@@ -1,0 +1,150 @@
+# Social Warehouse — Docker Compose
+# https://github.com/siege-analytics/socialwarehouse
+#
+# Profiles:
+#   (default)  — PostGIS + Python computation
+#   spark      — adds Spark master/worker/history
+#   full       — adds Zeppelin notebook + Maven for JAR fetching
+#
+# Usage:
+#   docker compose up -d                         # PostGIS + Python
+#   docker compose --profile spark up -d         # + Spark cluster
+#   docker compose --profile full up -d          # everything
+#
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostGIS — always starts
+  # ---------------------------------------------------------------------------
+  postgis:
+    image: postgis/postgis:16-3.4
+    env_file: .env
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST_AUTH_METHOD=${POSTGRES_HOST_AUTH_METHOD:-scram-sha-256}
+    ports:
+      - "${POSTGRES_PORT:-54324}:5432"
+    volumes:
+      - swh_pg_data:/var/lib/postgresql/data
+      - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    command: >
+      postgres
+        -c hba_file=/etc/postgresql/pg_hba.conf
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Python computation — always starts, depends on PostGIS
+  # ---------------------------------------------------------------------------
+  python-computation:
+    build:
+      context: docker/python-computation
+      args:
+        - UBUNTU_BASE_IMAGE=${UBUNTU_BASE_IMAGE:-ubuntu:22.04}
+        - PYTHON_VENV_PATH=${PYTHON_VENV_PATH:-/opt/venv}
+    image: swh-python-image
+    env_file: .env
+    volumes:
+      - .:/opt/social_warehouse/
+    depends_on:
+      postgis:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Spark cluster — only with --profile spark or --profile full
+  # ---------------------------------------------------------------------------
+  spark-master:
+    image: swh-spark-image
+    build:
+      context: docker/spark
+      args:
+        - UBUNTU_BASE_IMAGE=${UBUNTU_BASE_IMAGE:-ubuntu:22.04}
+        - PYTHON_VENV_PATH=${PYTHON_VENV_PATH:-/opt/venv}
+    entrypoint: ["spark_entrypoint.sh", "master"]
+    environment:
+      - SPARK_NO_DAEMONIZE=false
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    ports:
+      - "4040:4040"
+      - "7077:7077"
+      - "9090:8080"
+    volumes:
+      - ./var/log/spark:/opt/spark/spark-events
+      - ./code:/opt/spark/code
+      - ./data:/opt/spark/data
+      - ./jars:/opt/spark/user-jars
+    profiles: [spark, full]
+
+  spark-worker:
+    image: swh-spark-image
+    entrypoint: ["spark_entrypoint.sh", "worker"]
+    environment:
+      - SPARK_NO_DAEMONIZE=false
+    ports:
+      - "9091:8081"
+    volumes:
+      - ./docker/spark/spark-worker-defaults.properties:/opt/spark/conf/spark-defaults.conf:ro
+      - ./var/log/spark:/opt/spark/spark-events
+      - ./code:/opt/spark/code
+      - ./data:/opt/spark/data
+      - ./jars:/opt/spark/user-jars
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    profiles: [spark, full]
+
+  spark-history:
+    image: swh-spark-image
+    entrypoint: ["spark_entrypoint.sh", "history"]
+    environment:
+      - SPARK_NO_DAEMONIZE=false
+    volumes:
+      - ./docker/spark/spark-master-defaults.properties:/opt/spark/conf/spark-defaults.conf:ro
+      - ./var/log/spark:/opt/spark/spark-events
+    ports:
+      - "18080:18080"
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    profiles: [spark, full]
+
+  # ---------------------------------------------------------------------------
+  # Zeppelin notebook — only with --profile full
+  # ---------------------------------------------------------------------------
+  zeppelin:
+    image: apache/zeppelin:0.11.1
+    ports:
+      - "8082:8080"
+    restart: always
+    environment:
+      - ZEPPELIN_IN_DOCKER=true
+    depends_on:
+      postgis:
+        condition: service_healthy
+    profiles: [full]
+
+  # ---------------------------------------------------------------------------
+  # Maven — JAR fetcher for Sedona, only with --profile full
+  # ---------------------------------------------------------------------------
+  maven:
+    image: maven:3.9-eclipse-temurin-11
+    volumes:
+      - ./.m2:/root/.m2
+      - ./jars:/usr/src/app/jars
+    working_dir: /usr/src/app
+    command: sh -c "while true; do sleep 3600; done"
+    profiles: [full]
+
+volumes:
+  swh_pg_data:

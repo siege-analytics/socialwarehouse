@@ -5,6 +5,12 @@ data/**/*.*
 data/inputs/**/*.*
 data/outputs/**/*.*
 
+# Proprietary SQL — lives in GitLab, never in public GitHub
+code/sql_templates/full_process.sql
+
+# Credentials — use .env.example as template
+conf/postgres.env
+.env
 
 ### Vagrant template
 # General
@@ -377,8 +383,7 @@ cython_debug/
 
 /NetrwTreeListing
 
-# Generated docker compose files
-docker-compose.yml
+# docker-compose.yml is now tracked (no longer auto-generated)
 
 # Metals VS Code Extension
 .metals

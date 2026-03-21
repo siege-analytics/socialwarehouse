@@ -67,6 +67,13 @@ def _coerce_and_build_geometry(
         >>> len(gdf)
         1
     """
+    missing = {longitude_col, latitude_col} - set(df.columns)
+    if missing:
+        raise ValueError(
+            f"Coordinate column(s) not found in DataFrame: {missing}. "
+            f"Available columns: {list(df.columns)}"
+        )
+
     df = df.copy()
     df[longitude_col] = pd.to_numeric(df[longitude_col], errors="coerce")
     df[latitude_col] = pd.to_numeric(df[latitude_col], errors="coerce")

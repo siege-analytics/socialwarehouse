@@ -26,16 +26,20 @@ ENV PATH="${PYTHON_VENV_PATH}/bin:${PATH}"
 RUN pip install --upgrade pip \
     && pip install GDAL=="$(gdal-config --version).*"
 
-# ---- Install the swh package (editable) ----
-# The repo is mounted at /opt/social_warehouse/, so we install from there.
-# During build, we copy just pyproject.toml to cache the dependency layer.
+# ---- Python dependencies ----
 COPY requirements.txt /tmp/
 RUN pip install -r /tmp/requirements.txt
 
+# ---- Non-root user ----
+RUN groupadd -r swh && useradd -r -g swh -d /opt/social_warehouse -s /bin/bash swh
+RUN mkdir -p /opt/social_warehouse && chown -R swh:swh /opt/social_warehouse ${PYTHON_VENV_PATH}
+
 WORKDIR /opt/social_warehouse
 
-ADD entrypoint.sh /usr/local/bin/
+COPY entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh
-ENTRYPOINT ["entrypoint.sh"]
 
+USER swh
+
+ENTRYPOINT ["entrypoint.sh"]
 CMD ["python3", "--version"]

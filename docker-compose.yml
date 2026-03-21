@@ -28,8 +28,11 @@ services:
     ports:
       - "${POSTGRES_PORT:-54324}:5432"
     volumes:
-      - swh_pg_data:/var/lib/postgresql
+      - swh_pg_data:/var/lib/postgresql/data
       - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    command: >
+      postgres
+        -c hba_file=/etc/postgresql/pg_hba.conf
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]

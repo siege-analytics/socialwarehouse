@@ -23,6 +23,7 @@ Example usage:
 from __future__ import annotations
 
 import logging
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -48,6 +49,43 @@ DEFAULT_COLUMNS = {
 }
 
 
+def _coerce_and_build_geometry(
+    df: pd.DataFrame,
+    longitude_col: str,
+    latitude_col: str,
+    crs: int,
+) -> gpd.GeoDataFrame:
+    """Coerce lon/lat to numeric, drop invalid rows, build GeoDataFrame.
+
+    Handles non-numeric values (e.g. 'invalid', empty strings) by coercing
+    to NaN first, then dropping — prevents Point() from crashing on bad data.
+    Also validates coordinate bounds.
+
+    Example:
+        >>> df = pd.DataFrame({"lon": ["1.0", "invalid", ""], "lat": ["2.0", "3.0", ""]})
+        >>> gdf = _coerce_and_build_geometry(df, "lon", "lat", 4326)
+        >>> len(gdf)
+        1
+    """
+    df = df.copy()
+    df[longitude_col] = pd.to_numeric(df[longitude_col], errors="coerce")
+    df[latitude_col] = pd.to_numeric(df[latitude_col], errors="coerce")
+    df = df.dropna(subset=[longitude_col, latitude_col])
+
+    # Bounds check — valid geographic coordinates
+    valid_mask = (
+        (df[longitude_col].between(-180, 180))
+        & (df[latitude_col].between(-90, 90))
+    )
+    dropped = (~valid_mask).sum()
+    if dropped > 0:
+        logger.warning("Dropped %d rows with out-of-range coordinates", dropped)
+    df = df[valid_mask]
+
+    geometry = gpd.points_from_xy(df[longitude_col], df[latitude_col])
+    return gpd.GeoDataFrame(df, geometry=geometry, crs=f"EPSG:{crs}")
+
+
 def load_voter_file(
     filepath: str | Path,
     table_name: str,
@@ -62,6 +100,10 @@ def load_voter_file(
 
     Reads the CSV in chunks, creates Point geometries from lon/lat columns,
     and uploads to PostGIS using siege_utilities.PostGISConnector.
+
+    Uses a staging table for atomicity — if any chunk fails, the target
+    table is left untouched. On success, the staging table is renamed
+    to the target.
 
     Args:
         filepath: Path to the voter file CSV.
@@ -87,34 +129,50 @@ def load_voter_file(
         Loaded 15234567 voters
     """
     from siege_utilities.connectors import PostGISConnector
+    from sqlalchemy import text
 
     filepath = Path(filepath)
     conn_str = connection_string or settings.database.connection_string
     connector = PostGISConnector(conn_str)
 
+    # Use a staging table for atomicity
+    staging_table = f"_staging_{table_name}_{uuid.uuid4().hex[:8]}"
+
     total_rows = 0
     first_chunk = True
 
-    for chunk in pd.read_csv(filepath, chunksize=chunk_size):
-        # Drop rows without valid coordinates
-        chunk = chunk.dropna(subset=[longitude_col, latitude_col])
+    try:
+        for chunk in pd.read_csv(filepath, chunksize=chunk_size):
+            gdf = _coerce_and_build_geometry(chunk, longitude_col, latitude_col, crs)
 
-        # Create geometry
-        geometry = [
-            Point(lon, lat)
-            for lon, lat in zip(chunk[longitude_col], chunk[latitude_col])
-        ]
-        gdf = gpd.GeoDataFrame(chunk, geometry=geometry, crs=f"EPSG:{crs}")
+            if len(gdf) == 0:
+                continue
 
-        # Upload: replace on first chunk, append thereafter
-        if_exists = "replace" if first_chunk else "append"
-        connector.upload_spatial_data(gdf, table_name, schema=schema, if_exists=if_exists)
+            # Upload: replace on first chunk, append thereafter
+            if_exists = "replace" if first_chunk else "append"
+            connector.upload_spatial_data(gdf, staging_table, schema=schema, if_exists=if_exists)
 
-        total_rows += len(gdf)
-        first_chunk = False
-        logger.info("Loaded chunk: %d rows (total: %d)", len(gdf), total_rows)
+            total_rows += len(gdf)
+            first_chunk = False
+            logger.info("Loaded chunk: %d rows (total: %d)", len(gdf), total_rows)
 
-    logger.info("Finished loading %s -> %s (%d total rows)", filepath.name, table_name, total_rows)
+        # Atomic swap: drop target, rename staging -> target
+        with connector.engine.begin() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS {schema}.{table_name}"))
+            conn.execute(text(f"ALTER TABLE {schema}.{staging_table} RENAME TO {table_name}"))
+
+        logger.info("Finished loading %s -> %s (%d total rows)", filepath.name, table_name, total_rows)
+
+    except Exception:
+        # Clean up staging table on failure
+        logger.exception("Failed to load %s — cleaning up staging table", filepath.name)
+        try:
+            with connector.engine.begin() as conn:
+                conn.execute(text(f"DROP TABLE IF EXISTS {schema}.{staging_table}"))
+        except Exception:
+            logger.warning("Could not clean up staging table %s", staging_table)
+        raise
+
     return total_rows
 
 
@@ -142,10 +200,4 @@ def voter_file_to_geodataframe(
         >>> gdf.head()
     """
     df = pd.read_csv(filepath)
-    df = df.dropna(subset=[longitude_col, latitude_col])
-
-    geometry = [
-        Point(lon, lat)
-        for lon, lat in zip(df[longitude_col], df[latitude_col])
-    ]
-    return gpd.GeoDataFrame(df, geometry=geometry, crs=f"EPSG:{crs}")
+    return _coerce_and_build_geometry(df, longitude_col, latitude_col, crs)

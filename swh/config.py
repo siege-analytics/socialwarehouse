@@ -26,17 +26,15 @@ Example usage:
 
 from __future__ import annotations
 
-import os
-from typing import Optional
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import URL
 
 
 class DatabaseSettings(BaseSettings):
     """PostGIS connection settings, populated from POSTGRES_* env vars."""
 
-    model_config = SettingsConfigDict(env_prefix="POSTGRES_")
+    model_config = SettingsConfigDict(env_prefix="POSTGRES_", env_file=".env")
 
     host: str = "postgis"
     port: int = 5432
@@ -48,15 +46,27 @@ class DatabaseSettings(BaseSettings):
     def connection_string(self) -> str:
         """SQLAlchemy connection string for PostGIS.
 
+        Uses SQLAlchemy's URL.create() to safely handle reserved characters
+        (@, :, /, etc.) in credentials.
+
         Example:
             >>> settings.database.connection_string
             'postgresql://socialwarehouse:CHANGEME@postgis:5432/gis'
         """
-        return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.db}"
+        return str(URL.create(
+            drivername="postgresql",
+            username=self.user,
+            password=self.password,
+            host=self.host,
+            port=self.port,
+            database=self.db,
+        ))
 
     @property
     def psycopg2_dsn(self) -> str:
         """DSN string for psycopg2.connect().
+
+        Uses keyword=value format which handles special characters natively.
 
         Example:
             >>> settings.database.psycopg2_dsn
@@ -68,7 +78,7 @@ class DatabaseSettings(BaseSettings):
 class CensusSettings(BaseSettings):
     """Census data download settings, populated from CENSUS_* env vars."""
 
-    model_config = SettingsConfigDict(env_prefix="CENSUS_")
+    model_config = SettingsConfigDict(env_prefix="CENSUS_", env_file=".env")
 
     year: int = 2023
     congress_number: int = 118
@@ -110,6 +120,8 @@ class SocialWarehouseSettings(BaseSettings):
         >>> settings.census.year
         2023
     """
+
+    model_config = SettingsConfigDict(env_file=".env")
 
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     census: CensusSettings = Field(default_factory=CensusSettings)

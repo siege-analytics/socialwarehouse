@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "socialwarehouse"
+version = "1.0.0"
+description = "Docker infrastructure and data loading for Siege Analytics geospatial warehouse"
+readme = "README.md"
+license = {text = "Proprietary"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Dheeraj Chand", email = "dheeraj@siegeanalytics.com"},
+]
+
+dependencies = [
+    "siege-utilities[geo]>=0.9.0",
+    "click>=8.0",
+    "geopandas>=1.1.2",
+    "pandas>=2.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "psycopg2-binary>=2.9",
+    "sqlalchemy>=2.0",
+]
+
+[project.optional-dependencies]
+spark = [
+    "pyspark>=3.4",
+    "apache-sedona>=1.5",
+]
+analysis = [
+    "pysal>=24.1",
+    "tobler>=0.11",
+    "scipy>=1.11",
+]
+full = [
+    "socialwarehouse[spark,analysis]",
+    "dbt-core>=1.7",
+    "dbt-postgres>=1.7",
+    "polars[all]>=0.20",
+]
+dev = [
+    "ipython",
+    "ipdb",
+    "pytest>=7.0",
+    "ruff>=0.3",
+]
+
+[project.scripts]
+swh = "swh.cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["swh*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]

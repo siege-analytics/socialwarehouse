@@ -1,32 +1,16 @@
-beautifulsoup4
-cesiumpy
-dbt-core
-dbt-postgres
-dbt-redshift
-dbt-snowflake
-dbt-bigquery
-dbt-trino
-inflection
-ipdb
+# Core dependencies for the Python computation container.
+# The swh package itself is installed via `pip install -e .` at runtime
+# (since the repo is volume-mounted at /opt/social_warehouse/).
+
+siege-utilities[geo]>=0.9.0
+click>=8.0
+geopandas>=1.1.2
+pandas>=2.0
+pydantic>=2.0
+pydantic-settings>=2.0
+psycopg2-binary>=2.9
+sqlalchemy>=2.0
+pyproj>=3.6
+shapely>=2.0
 ipython
-pandas
-polars[all]
-psycopg2-binary
-pygdaltools
-python-dotenv
-pyproj
-pysal
-pyspark
-requests
-scipy
-shapely
-scrapy
-snowflake-connector-python
-sqlalchemy
-tobler
-traitlets
-ttictoc
-tqdm
-
-
-
+ipdb

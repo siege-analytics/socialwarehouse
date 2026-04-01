@@ -4,17 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "socialwarehouse"
-version = "1.0.0"
-description = "Docker infrastructure and data loading for Siege Analytics geospatial warehouse"
+version = "2.0.0-dev"
+description = "Data warehouse and delta lake for geographic, demographic, and civic data — the DSTK replacement"
 readme = "README.md"
 license = {text = "Proprietary"}
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     {name = "Dheeraj Chand", email = "dheeraj@siegeanalytics.com"},
 ]
 
 dependencies = [
-    "siege-utilities[geo]>=0.9.0",
+    "siege-utilities[geo]>=3.13.0",
+    "Django>=4.2",
+    "djangorestframework>=3.14",
+    "celery[redis]>=5.3",
     "click>=8.0",
     "geopandas>=1.1.2",
     "pandas>=2.0",
@@ -27,6 +30,7 @@ dependencies = [
 [project.optional-dependencies]
 spark = [
     "pyspark>=3.4",
+    "delta-spark>=3.0",
     "apache-sedona>=1.5",
 ]
 analysis = [
@@ -36,14 +40,13 @@ analysis = [
 ]
 full = [
     "socialwarehouse[spark,analysis]",
-    "dbt-core>=1.7",
-    "dbt-postgres>=1.7",
     "polars[all]>=0.20",
 ]
 dev = [
     "ipython",
     "ipdb",
     "pytest>=7.0",
+    "pytest-django>=4.5",
     "ruff>=0.3",
 ]
 
@@ -51,11 +54,15 @@ dev = [
 swh = "swh.cli:cli"
 
 [tool.setuptools.packages.find]
-include = ["swh*"]
+include = ["swh*", "socialwarehouse*"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "socialwarehouse.settings.test"
+pythonpath = ["."]

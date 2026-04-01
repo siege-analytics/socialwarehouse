@@ -15,39 +15,40 @@ authors = [
 
 dependencies = [
     "siege-utilities[geo]>=3.13.0",
-    "Django>=4.2",
-    "djangorestframework>=3.14",
-    "celery[redis]>=5.3",
-    "click>=8.0",
-    "geopandas>=1.1.2",
-    "pandas>=2.0",
-    "pydantic>=2.0",
+    "Django>=5.2",
+    "djangorestframework>=3.16",
+    "celery[redis]>=5.6",
+    "click>=8.1",
+    "geopandas>=1.1",
+    "pandas>=2.2",
+    "pydantic>=2.10",
     "pydantic-settings>=2.0",
     "psycopg2-binary>=2.9",
     "sqlalchemy>=2.0",
+    "geopy>=2.4",
 ]
 
 [project.optional-dependencies]
 spark = [
-    "pyspark>=3.4",
-    "delta-spark>=3.0",
-    "apache-sedona>=1.5",
+    "pyspark>=4.0",
+    "delta-spark>=4.0",
+    "apache-sedona>=1.7",
 ]
 analysis = [
     "pysal>=24.1",
-    "tobler>=0.11",
-    "scipy>=1.11",
+    "tobler>=0.12",
+    "scipy>=1.14",
 ]
 full = [
     "socialwarehouse[spark,analysis]",
-    "polars[all]>=0.20",
+    "polars>=1.0",
 ]
 dev = [
     "ipython",
     "ipdb",
-    "pytest>=7.0",
-    "pytest-django>=4.5",
-    "ruff>=0.3",
+    "pytest>=8.0",
+    "pytest-django>=4.9",
+    "ruff>=0.9",
 ]
 
 [project.scripts]

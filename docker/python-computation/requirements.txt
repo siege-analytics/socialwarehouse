@@ -1,8 +1,11 @@
-# Core dependencies for the Python computation container.
-# The swh package itself is installed via `pip install -e .` at runtime
+# Core dependencies for the Social Warehouse containers.
+# The socialwarehouse + swh packages are installed via `pip install -e .` at runtime
 # (since the repo is volume-mounted at /opt/social_warehouse/).
 
-siege-utilities[geo]>=0.9.0
+siege-utilities[geo]>=3.13.0
+Django>=4.2
+djangorestframework>=3.14
+celery[redis]>=5.3
 click>=8.0
 geopandas>=1.1.2
 pandas>=2.0
@@ -12,5 +15,6 @@ psycopg2-binary>=2.9
 sqlalchemy>=2.0
 pyproj>=3.6
 shapely>=2.0
+geopy>=2.4
 ipython
 ipdb

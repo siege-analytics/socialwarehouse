@@ -2,11 +2,19 @@
 Address Boundary Period Model
 
 Records which geographic boundaries an address falls within for each Census
-vintage. This enables temporal queries like:
+vintage AND redistricting plan. This enables temporal queries like:
 
-    "What congressional district was this donor in during the 2016 cycle?"
+    "What congressional district was this donor in on June 15, 2023?"
 
-One AddressBoundaryPeriod row per address per census vintage.
+An address can have multiple boundary period records for the same Census
+vintage when court-ordered redistricting changes political boundaries
+mid-cycle. Static boundaries (county, tract) stay the same; political
+boundaries (CD, SLDL, SLDU) differ by active plan.
+
+Example:
+    address=123 Main St, vintage=2020, plan=AL Enacted       → CD-07
+    address=123 Main St, vintage=2020, plan=Milligan Interim  → CD-02
+    address=123 Main St, vintage=2020, plan=Milligan Final    → CD-02
 """
 
 from django.db import models
@@ -14,15 +22,15 @@ from django.db import models
 
 class AddressBoundaryPeriod(models.Model):
     """
-    Snapshot of an address's boundary assignments for a specific Census vintage.
+    Snapshot of an address's boundary assignments for a specific Census vintage
+    and redistricting plan.
 
-    Links an address to its containing boundaries (state, county, tract, CD,
-    VTD, SLDL, SLDU) for a given Census decade. When boundaries change due
-    to redistricting, a new row is created for the new vintage.
+    For static boundaries (state, county, tract, block group), the assignment
+    is the same regardless of plan — these are decadal Census boundaries.
 
-    Example:
-        address=123 Main St, vintage=2010 → CD-07, County-031, ...
-        address=123 Main St, vintage=2020 → CD-04, County-031, ...
+    For political boundaries (CD, SLDL, SLDU), the assignment depends on
+    which redistricting plan was active. If redistricting_plan is NULL,
+    the Census-drawn boundaries are used (the default).
     """
 
     address = models.ForeignKey(
@@ -36,13 +44,42 @@ class AddressBoundaryPeriod(models.Model):
         related_name="boundary_assignments",
     )
 
+    # Temporal context — which plan was active when this assignment was made
+    redistricting_plan = models.ForeignKey(
+        "siege_geo.RedistrictingPlan",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_constraint=False,
+        related_name="sw_boundary_periods",
+        help_text="Active redistricting plan (NULL = Census default boundaries)",
+    )
+    congressional_term = models.ForeignKey(
+        "siege_geo.CongressionalTerm",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_constraint=False,
+        related_name="sw_boundary_periods",
+        help_text="Congressional term context for this assignment",
+    )
+    context_date = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="The date this assignment is valid for (resolves plan)",
+    )
+
     # GEOIDs for each boundary level
+    # Static boundaries (don't change with redistricting plans)
     state_geoid = models.CharField(max_length=2, null=True, blank=True)
     county_geoid = models.CharField(max_length=5, null=True, blank=True)
     tract_geoid = models.CharField(max_length=11, null=True, blank=True)
     block_group_geoid = models.CharField(max_length=12, null=True, blank=True)
     block_geoid = models.CharField(max_length=15, null=True, blank=True)
     vtd_geoid = models.CharField(max_length=11, null=True, blank=True)
+
+    # Political boundaries (change with redistricting plans)
     cd_geoid = models.CharField(max_length=4, null=True, blank=True)
     sldl_geoid = models.CharField(max_length=5, null=True, blank=True)
     sldu_geoid = models.CharField(max_length=5, null=True, blank=True)
@@ -77,6 +114,26 @@ class AddressBoundaryPeriod(models.Model):
         null=True, blank=True, db_constraint=False, related_name="sw_boundary_periods",
     )
 
+    # Plan-specific FKs (for districts that come from a redistricting plan, not Census)
+    plan_district_cd = models.ForeignKey(
+        "siege_geo.PlanDistrict", on_delete=models.SET_NULL,
+        null=True, blank=True, db_constraint=False,
+        related_name="sw_cd_assignments",
+        help_text="PlanDistrict for CD if using a redistricting plan",
+    )
+    plan_district_sldl = models.ForeignKey(
+        "siege_geo.PlanDistrict", on_delete=models.SET_NULL,
+        null=True, blank=True, db_constraint=False,
+        related_name="sw_sldl_assignments",
+        help_text="PlanDistrict for SLDL if using a redistricting plan",
+    )
+    plan_district_sldu = models.ForeignKey(
+        "siege_geo.PlanDistrict", on_delete=models.SET_NULL,
+        null=True, blank=True, db_constraint=False,
+        related_name="sw_sldu_assignments",
+        help_text="PlanDistrict for SLDU if using a redistricting plan",
+    )
+
     # Metadata
     assigned_at = models.DateTimeField(auto_now_add=True)
     assignment_method = models.CharField(
@@ -86,6 +143,7 @@ class AddressBoundaryPeriod(models.Model):
             ("CENSUS_API", "Census Geocoder API"),
             ("NOMINATIM", "Nominatim + spatial join"),
             ("FIPS_LOOKUP", "Direct FIPS code lookup"),
+            ("PLAN_SPATIAL_JOIN", "PostGIS spatial join against redistricting plan"),
             ("MANUAL", "Manual assignment"),
         ],
         default="SPATIAL_JOIN",
@@ -93,8 +151,8 @@ class AddressBoundaryPeriod(models.Model):
 
     class Meta:
         db_table = "sw_geo_address_boundary_period"
-        unique_together = [["address", "vintage"]]
-        ordering = ["address", "-vintage"]
+        unique_together = [["address", "vintage", "redistricting_plan"]]
+        ordering = ["address", "-vintage", "-context_date"]
         verbose_name = "Address Boundary Period"
         verbose_name_plural = "Address Boundary Periods"
         indexes = [
@@ -103,7 +161,10 @@ class AddressBoundaryPeriod(models.Model):
             models.Index(fields=["vintage", "vtd_geoid"]),
             models.Index(fields=["vintage", "sldl_geoid"]),
             models.Index(fields=["vintage", "sldu_geoid"]),
+            models.Index(fields=["context_date", "state_geoid"]),
+            models.Index(fields=["redistricting_plan", "cd_geoid"]),
         ]
 
     def __str__(self):
-        return f"Address {self.address_id} @ {self.vintage.decade} Census"
+        plan = f" [{self.redistricting_plan}]" if self.redistricting_plan else ""
+        return f"Address {self.address_id} @ {self.vintage.decade} Census{plan}"

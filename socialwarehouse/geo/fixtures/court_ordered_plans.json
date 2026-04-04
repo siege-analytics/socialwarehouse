@@ -1,0 +1,172 @@
+[
+  {
+    "model": "siege_geo.redistrictingplan",
+    "fields": {
+      "state_fips": "01",
+      "chamber": "congress",
+      "cycle_year": 2020,
+      "plan_name": "2021 Alabama Enacted Congressional Plan",
+      "plan_type": "enacted",
+      "source": "legislature",
+      "num_districts": 7,
+      "enacted_date": "2021-11-04",
+      "effective_from": "2022-01-01",
+      "effective_to": "2023-06-08",
+      "court_case": "",
+      "data_source": "rdh"
+    }
+  },
+  {
+    "model": "siege_geo.redistrictingplan",
+    "fields": {
+      "state_fips": "01",
+      "chamber": "congress",
+      "cycle_year": 2020,
+      "plan_name": "Allen v. Milligan Interim Plan",
+      "plan_type": "court_ordered",
+      "source": "court",
+      "num_districts": 7,
+      "enacted_date": "2023-06-08",
+      "effective_from": "2023-06-08",
+      "effective_to": "2023-10-05",
+      "court_case": "Allen v. Milligan, 599 U.S. 1 (2023)",
+      "data_source": "court"
+    }
+  },
+  {
+    "model": "siege_geo.redistrictingplan",
+    "fields": {
+      "state_fips": "01",
+      "chamber": "congress",
+      "cycle_year": 2020,
+      "plan_name": "Allen v. Milligan Final Plan",
+      "plan_type": "court_ordered",
+      "source": "court",
+      "num_districts": 7,
+      "enacted_date": "2023-10-05",
+      "effective_from": "2023-10-05",
+      "effective_to": null,
+      "court_case": "Allen v. Milligan, 599 U.S. 1 (2023)",
+      "data_source": "court"
+    }
+  },
+  {
+    "model": "siege_geo.redistrictingplan",
+    "fields": {
+      "state_fips": "22",
+      "chamber": "congress",
+      "cycle_year": 2020,
+      "plan_name": "2022 Louisiana Enacted Congressional Plan",
+      "plan_type": "enacted",
+      "source": "legislature",
+      "num_districts": 6,
+      "enacted_date": "2022-03-30",
+      "effective_from": "2022-01-01",
+      "effective_to": "2024-01-15",
+      "court_case": "",
+      "data_source": "rdh"
+    }
+  },
+  {
+    "model": "siege_geo.redistrictingplan",
+    "fields": {
+      "state_fips": "22",
+      "chamber": "congress",
+      "cycle_year": 2020,
+      "plan_name": "Robinson v. Ardoin Court-Ordered Plan",
+      "plan_type": "court_ordered",
+      "source": "court",
+      "num_districts": 6,
+      "enacted_date": "2024-01-15",
+      "effective_from": "2024-01-15",
+      "effective_to": null,
+      "court_case": "Robinson v. Ardoin, No. 22-30333 (5th Cir.)",
+      "data_source": "court"
+    }
+  },
+  {
+    "model": "siege_geo.redistrictingplan",
+    "fields": {
+      "state_fips": "36",
+      "chamber": "congress",
+      "cycle_year": 2020,
+      "plan_name": "2022 New York Enacted Congressional Plan",
+      "plan_type": "enacted",
+      "source": "legislature",
+      "num_districts": 26,
+      "enacted_date": "2022-02-02",
+      "effective_from": "2022-01-01",
+      "effective_to": "2022-04-27",
+      "court_case": "",
+      "data_source": "rdh"
+    }
+  },
+  {
+    "model": "siege_geo.redistrictingplan",
+    "fields": {
+      "state_fips": "36",
+      "chamber": "congress",
+      "cycle_year": 2020,
+      "plan_name": "2022 NY Court-Drawn Congressional Plan",
+      "plan_type": "court_ordered",
+      "source": "court",
+      "num_districts": 26,
+      "enacted_date": "2022-05-20",
+      "effective_from": "2022-05-20",
+      "effective_to": "2024-02-28",
+      "court_case": "Harkenrider v. Hochul",
+      "data_source": "court"
+    }
+  },
+  {
+    "model": "siege_geo.redistrictingplan",
+    "fields": {
+      "state_fips": "36",
+      "chamber": "congress",
+      "cycle_year": 2020,
+      "plan_name": "2024 NY Legislature Congressional Plan",
+      "plan_type": "enacted",
+      "source": "legislature",
+      "num_districts": 26,
+      "enacted_date": "2024-02-28",
+      "effective_from": "2024-02-28",
+      "effective_to": null,
+      "court_case": "",
+      "data_source": "rdh"
+    }
+  },
+  {
+    "model": "siege_geo.redistrictingplan",
+    "fields": {
+      "state_fips": "13",
+      "chamber": "congress",
+      "cycle_year": 2020,
+      "plan_name": "2021 Georgia Enacted Congressional Plan",
+      "plan_type": "enacted",
+      "source": "legislature",
+      "num_districts": 14,
+      "enacted_date": "2021-12-30",
+      "effective_from": "2022-01-01",
+      "effective_to": "2023-10-26",
+      "court_case": "",
+      "data_source": "rdh"
+    }
+  },
+  {
+    "model": "siege_geo.redistrictingplan",
+    "fields": {
+      "state_fips": "13",
+      "chamber": "congress",
+      "cycle_year": 2020,
+      "plan_name": "Alpha Phi Alpha v. Raffensperger Court-Ordered Plan",
+      "plan_type": "court_ordered",
+      "source": "court",
+      "num_districts": 14,
+      "enacted_date": "2023-10-26",
+      "effective_from": "2023-10-26",
+      "effective_to": null,
+      "court_case": "Alpha Phi Alpha Fraternity v. Raffensperger, No. 1:21-cv-05337 (N.D. Ga.)",
+      "data_source": "court"
+    }
+  }
+]

@@ -93,6 +93,30 @@ class Address(models.Model):
     )
     census_units_assigned_at = models.DateTimeField(null=True, blank=True)
 
+    # ── Address construction timeline (TIGER ADDRFEAT) ──────────────────
+    tiger_first_seen_year = models.PositiveSmallIntegerField(
+        null=True, blank=True, db_index=True,
+        help_text=(
+            "Earliest TIGER/Line ADDRFEAT vintage in which this address range "
+            "appears. Approximates when the address was built. Populated by "
+            "cross-referencing address against multiple TIGER vintage years."
+        ),
+    )
+    tiger_last_seen_year = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text=(
+            "Most recent TIGER/Line ADDRFEAT vintage containing this address. "
+            "If absent from the latest vintage, the address may have been demolished."
+        ),
+    )
+    first_seen_in_data = models.DateField(
+        null=True, blank=True, db_index=True,
+        help_text=(
+            "Earliest date this address appeared in any data source (FEC filings, "
+            "voter files, Census). Cross-validates tiger_first_seen_year."
+        ),
+    )
+
     # ── siege_geo ForeignKeys (canonical) ────────────────────────────────
     siege_state = models.ForeignKey(
         "siege_geo.State", on_delete=models.SET_NULL,

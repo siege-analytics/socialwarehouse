@@ -18,7 +18,7 @@ services:
   # PostGIS — always starts
   # ---------------------------------------------------------------------------
   postgis:
-    image: postgis/postgis:16-3.4
+    image: postgis/postgis:17-3.5
     env_file: .env
     environment:
       - POSTGRES_DB=${POSTGRES_DB}
@@ -41,7 +41,77 @@ services:
       retries: 5
 
   # ---------------------------------------------------------------------------
-  # Python computation — always starts, depends on PostGIS
+  # Redis — Celery broker + result backend
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # Django web — DSTK API + admin
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      context: docker/python-computation
+      args:
+        - UBUNTU_BASE_IMAGE=${UBUNTU_BASE_IMAGE:-ubuntu:22.04}
+        - PYTHON_VENV_PATH=${PYTHON_VENV_PATH:-/opt/venv}
+    image: swh-python-image
+    env_file: .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=socialwarehouse.settings.development
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - POSTGRES_HOST=postgis
+    command: >
+      bash -c "
+        pip install -e /opt/social_warehouse/ --quiet 2>/dev/null &&
+        python -m django migrate --settings=socialwarehouse.settings.development --no-input &&
+        python -m django runserver 0.0.0.0:8000 --settings=socialwarehouse.settings.development
+      "
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/opt/social_warehouse/
+    depends_on:
+      postgis:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Celery worker — async geographic tasks
+  # ---------------------------------------------------------------------------
+  celery-worker:
+    image: swh-python-image
+    env_file: .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=socialwarehouse.settings.development
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - POSTGRES_HOST=postgis
+    command: >
+      bash -c "
+        pip install -e /opt/social_warehouse/ --quiet 2>/dev/null &&
+        celery -A socialwarehouse.celery_app worker -l info
+      "
+    volumes:
+      - .:/opt/social_warehouse/
+    depends_on:
+      postgis:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Python computation — interactive shell for swh CLI + data loading
   # ---------------------------------------------------------------------------
   python-computation:
     build:
@@ -51,6 +121,10 @@ services:
         - PYTHON_VENV_PATH=${PYTHON_VENV_PATH:-/opt/venv}
     image: swh-python-image
     env_file: .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=socialwarehouse.settings.development
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - POSTGRES_HOST=postgis
     volumes:
       - .:/opt/social_warehouse/
     depends_on:

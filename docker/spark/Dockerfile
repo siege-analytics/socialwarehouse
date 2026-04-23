@@ -1,6 +1,7 @@
 # Social Warehouse — Spark + Sedona Image
 #
-# Uses SDKMAN to install Java, Scala, and Spark in one pass.
+# Java/Scala via SDKMAN; Spark downloaded directly from Apache archive
+# (Spark 4.x is not yet in the SDKMAN candidate list).
 # GDAL is installed for geospatial Python work (geopandas, sedona, etc.).
 
 ARG UBUNTU_BASE_IMAGE=ubuntu:24.04
@@ -10,6 +11,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG PYTHON_VENV_PATH=/opt/venv
 
 ARG SPARK_VERSION=4.0.2
+ARG SPARK_HADOOP_PROFILE=hadoop3
 ARG JAVA_VERSION=21.0.7-tem
 ARG SCALA_VERSION=2.13.14
 
@@ -22,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         postgresql-client \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# ---- SDKMAN: Java, Scala, Spark in one step ----
+# ---- SDKMAN: Java and Scala (Spark 4.x not yet in SDKMAN candidate list) ----
 ENV SPARK_HOME=/opt/spark
 ENV HADOOP_HOME=/opt/hadoop
 
@@ -33,11 +35,14 @@ SHELL ["/bin/bash", "-c"]
 RUN curl -s "https://get.sdkman.io" | bash \
     && source "$HOME/.sdkman/bin/sdkman-init.sh" \
     && sdk install java ${JAVA_VERSION} \
-    && sdk install scala ${SCALA_VERSION} \
-    && sdk install spark ${SPARK_VERSION}
+    && sdk install scala ${SCALA_VERSION}
 
-# Symlink SDKMAN's Spark install into /opt/spark so $SPARK_HOME works
-RUN cp -a /root/.sdkman/candidates/spark/current/* ${SPARK_HOME}/
+# ---- Spark: download directly from Apache archive ----
+RUN wget -qO /tmp/spark.tgz \
+        "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-${SPARK_HADOOP_PROFILE}.tgz" \
+    && tar -xzf /tmp/spark.tgz -C /tmp/ \
+    && cp -a /tmp/spark-${SPARK_VERSION}-bin-${SPARK_HADOOP_PROFILE}/. ${SPARK_HOME}/ \
+    && rm -rf /tmp/spark*
 
 ENV JAVA_HOME=/root/.sdkman/candidates/java/current
 ENV SCALA_HOME=/root/.sdkman/candidates/scala/current

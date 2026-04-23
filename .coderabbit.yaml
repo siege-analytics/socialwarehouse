@@ -13,10 +13,9 @@ reviews:
     enabled: true
     # Don't review draft PRs until they're marked ready
     drafts: false
-    # Only review when these base branches are targeted
+    # Review PRs targeting any branch
     base_branches:
-      - main
-      - develop
+      - ".*"
 
   # Generate a high-level summary at the top of each review
   request_changes_workflow: false

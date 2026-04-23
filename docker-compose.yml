@@ -18,11 +18,7 @@ services:
   # PostGIS — always starts
   # ---------------------------------------------------------------------------
   postgis:
-    build:
-      context: docker/postgis-age
-      args:
-        - POSTGIS_BASE=${POSTGIS_BASE_IMAGE:-postgis/postgis:17-3.5}
-    image: swh-postgis-age
+    image: ${POSTGIS_BASE_IMAGE:-postgis/postgis:17-3.5}
     env_file: .env
     environment:
       - POSTGRES_DB=${POSTGRES_DB}
@@ -34,7 +30,6 @@ services:
     volumes:
       - swh_pg_data:/var/lib/postgresql/data
       - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
-      - ./docker/postgis-age/initdb-age.sql:/docker-entrypoint-initdb.d/01-age.sql:ro
     command: >
       postgres
         -c hba_file=/etc/postgresql/pg_hba.conf

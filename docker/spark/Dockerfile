@@ -1,7 +1,7 @@
 # Social Warehouse — Spark + Sedona Image
 #
 # Java/Scala via SDKMAN; Spark downloaded directly from Apache archive
-# (SDKMAN has Spark but only up to 4.0.0-preview2; 4.0.2 stable not yet listed).
+# (SDKMAN has Spark but only up to 4.0.0-preview2; 4.1.1 stable not yet listed).
 # GDAL is installed for geospatial Python work (geopandas, sedona, etc.).
 
 ARG UBUNTU_BASE_IMAGE=ubuntu:24.04
@@ -10,7 +10,7 @@ FROM ${UBUNTU_BASE_IMAGE}
 ARG DEBIAN_FRONTEND=noninteractive
 ARG PYTHON_VENV_PATH=/opt/venv
 
-ARG SPARK_VERSION=4.0.2
+ARG SPARK_VERSION=4.1.1
 ARG SPARK_HADOOP_PROFILE=hadoop3
 ARG JAVA_VERSION=21.0.7-tem
 ARG SCALA_VERSION=2.13.14
@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         postgresql-client \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# ---- SDKMAN: Java and Scala (SDKMAN has Spark but only up to 4.0.0-preview2; 4.0.2 not yet listed) ----
+# ---- SDKMAN: Java and Scala (SDKMAN has Spark but only up to 4.0.0-preview2; 4.1.1 not yet listed) ----
 ENV SPARK_HOME=/opt/spark
 ENV HADOOP_HOME=/opt/hadoop
 

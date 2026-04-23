@@ -10,6 +10,6 @@ psycopg2-binary>=2.9
 sqlalchemy>=2.0
 pyproj>=3.6
 shapely>=2.0
-apache-sedona>=1.8.1
+apache-sedona>=1.9.0
 ipython
 ipdb

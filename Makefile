@@ -58,18 +58,22 @@ spark-shell:  ## Open spark-shell on the master
 # Spark / Sedona JARs
 # ---------------------------------------------------------------------------
 
-SEDONA_VERSION  ?= 1.5.1
-GEOTOOLS_VERSION ?= 1.5.1-28.2
+SEDONA_VERSION      ?= 1.9.0
+SEDONA_SPARK_COMPAT ?= 4.1
+SEDONA_SCALA_COMPAT ?= 2.13
+GEOTOOLS_VERSION    ?= 1.9.0-33.1
+
+SEDONA_ARTIFACT     = sedona-spark-shaded-$(SEDONA_SPARK_COMPAT)_$(SEDONA_SCALA_COMPAT)
 
 .PHONY: fetch-jars clean-jars
 
-fetch-jars:  ## Download Sedona + GeoTools JARs via Maven
+fetch-jars:  ## Download Sedona + GeoTools JARs via Maven into ./jars/
 	$(DKC) --profile full up -d maven
 	$(DKC) exec maven mvn -U \
 		org.apache.maven.plugins:maven-dependency-plugin:3.6.1:get \
-		-Dartifact=org.apache.sedona:sedona-spark-shaded-3.4_2.13:$(SEDONA_VERSION)
+		-Dartifact=org.apache.sedona:$(SEDONA_ARTIFACT):$(SEDONA_VERSION)
 	$(DKC) exec maven cp \
-		/root/.m2/repository/org/apache/sedona/sedona-spark-shaded-3.4_2.13/$(SEDONA_VERSION)/sedona-spark-shaded-3.4_2.13-$(SEDONA_VERSION).jar \
+		/root/.m2/repository/org/apache/sedona/$(SEDONA_ARTIFACT)/$(SEDONA_VERSION)/$(SEDONA_ARTIFACT)-$(SEDONA_VERSION).jar \
 		./jars/
 	$(DKC) exec maven mvn -U \
 		org.apache.maven.plugins:maven-dependency-plugin:3.6.1:get \

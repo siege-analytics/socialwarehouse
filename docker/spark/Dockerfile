@@ -3,15 +3,15 @@
 # Uses SDKMAN to install Java, Scala, and Spark in one pass.
 # GDAL is installed for geospatial Python work (geopandas, sedona, etc.).
 
-ARG UBUNTU_BASE_IMAGE=ubuntu:22.04
+ARG UBUNTU_BASE_IMAGE=ubuntu:24.04
 FROM ${UBUNTU_BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG PYTHON_VENV_PATH=/opt/venv
 
-ARG SPARK_VERSION=3.4.2
-ARG JAVA_VERSION=11.0.22-ms
-ARG SCALA_VERSION=2.13.2
+ARG SPARK_VERSION=4.0.2
+ARG JAVA_VERSION=21.0.7-tem
+ARG SCALA_VERSION=2.13.14
 
 # ---- OS packages ----
 RUN apt-get update && apt-get install -y --no-install-recommends \

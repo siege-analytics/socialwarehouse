@@ -99,6 +99,41 @@ load-census:  ## Load Census shapefiles into PostGIS
 	$(DKC) exec python-computation python -m swh.cli load-census
 
 # ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+.PHONY: test test-unit test-integration
+
+test:  ## Run full pytest suite inside python-computation
+	$(DKC) run --rm python-computation python -m pytest tests/ -v
+
+test-unit:  ## Run unit tests only
+	$(DKC) run --rm python-computation python -m pytest tests/unit/ -v
+
+test-integration:  ## Run integration tests only
+	$(DKC) run --rm python-computation python -m pytest tests/integration/ -v
+
+# ---------------------------------------------------------------------------
+# Dev environment (siege_analytics_zshrc integration)
+# ---------------------------------------------------------------------------
+
+.PHONY: dev-env
+
+dev-env:  ## Print instructions for loading the SW dev shell environment
+	@echo ""
+	@echo "  Load the SW dev environment into your current zsh session:"
+	@echo ""
+	@echo "    source ./dev/sw.zsh"
+	@echo ""
+	@echo "  Then run:  sw_doctor   — pre-flight check"
+	@echo "             sw_build    — build images"
+	@echo "             sw_up       — start services"
+	@echo "             sw_test     — run test suite"
+	@echo ""
+	@echo "  Requires: https://github.com/dheerajchand/siege_analytics_zshrc"
+	@echo ""
+
+# ---------------------------------------------------------------------------
 # Help
 # ---------------------------------------------------------------------------
 

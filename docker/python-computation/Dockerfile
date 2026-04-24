@@ -3,7 +3,7 @@
 # Installs GDAL, siege_utilities, and the swh package.
 # The entire repo is mounted at /opt/social_warehouse/ for development.
 
-ARG UBUNTU_BASE_IMAGE=ubuntu:22.04
+ARG UBUNTU_BASE_IMAGE=ubuntu:24.04
 FROM ${UBUNTU_BASE_IMAGE}
 
 ARG PYTHON_VENV_PATH=/opt/venv

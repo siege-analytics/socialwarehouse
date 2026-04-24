@@ -16,5 +16,6 @@ sqlalchemy>=2.0
 pyproj>=3.7
 shapely>=2.1
 geopy>=2.4
+neo4j>=5.0
 ipython
 ipdb

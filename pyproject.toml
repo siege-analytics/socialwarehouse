@@ -69,4 +69,7 @@ select = ["E", "F", "I", "W"]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "socialwarehouse.settings.test"
-pythonpath = ["."]
+# vendor/geodjango_simple_template/app/hellodjango/ must be on pythonpath so
+# `import locations` resolves during pytest (manage.py's sys.path insert
+# doesn't run when pytest loads settings directly).
+pythonpath = [".", "vendor/geodjango_simple_template/app/hellodjango"]

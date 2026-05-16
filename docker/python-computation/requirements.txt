@@ -2,7 +2,7 @@
 # The socialwarehouse + swh packages are installed via `pip install -e .` at runtime
 # (since the repo is volume-mounted at /opt/social_warehouse/).
 
-siege-utilities[geo]>=3.13.0
+siege-utilities[geo]>=3.17.2
 Django>=5.2
 djangorestframework>=3.16
 djangorestframework-gis>=1.0

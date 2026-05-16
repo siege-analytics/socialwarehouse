@@ -15,6 +15,19 @@
 # =================================================================
 
 # -----------------------------------------------------------------
+# GST submodule init check
+# -----------------------------------------------------------------
+# vendor/geodjango_simple_template/ is a git submodule. If the clone
+# was done without --recurse-submodules, the directory exists but is
+# empty -- warn the operator instead of letting Django imports silently
+# resolve to nothing later.
+if [[ -d "vendor/geodjango_simple_template" && ! -e "vendor/geodjango_simple_template/app" ]]; then
+    echo "⚠️  GST submodule not initialised. Run:"
+    echo "      git submodule update --init --recursive"
+    echo "   See README.md \"Cloning\" for details."
+fi
+
+# -----------------------------------------------------------------
 # Load framework modules
 # -----------------------------------------------------------------
 _SW_MODULES="${ZSHRC_CONFIG_DIR:-$HOME/.config/zsh}/modules"

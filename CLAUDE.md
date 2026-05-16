@@ -12,14 +12,16 @@ Socialwarehouse is a data warehouse and delta lake for geographic, demographic, 
 
 **siege_utilities** = kitchen equipment — single-serving geographic operations (geocode, boundary lookup, demographics)
 **socialwarehouse** = the restaurant — uses SU's verbs to run geocoding, boundary management, and Census warehousing at massive scale
+**geodjango_simple_template** (GST) = the dining room template — webapp scaffold pulled in as a git submodule at `vendor/geodjango_simple_template/` (pinned). SW uses GST for the web-app side; GST stays independently usable.
 **pure-translation / enterprise** = a franchise — FEC campaign finance application that consumes SW
 
 ## Package Structure
 
-Two packages coexist:
+Three layers coexist:
 
 - `swh/` — CLI tool for Census data downloading and PostGIS loading (pre-existing)
 - `socialwarehouse/` — Django application with geographic warehouse, star schema, DSTK API, Celery tasks
+- `vendor/geodjango_simple_template/` — git submodule (GST), pinned snapshot of [siege-analytics/geodjango_simple_template](https://github.com/siege-analytics/geodjango_simple_template). Provides Django web-app scaffold (locations, dstk_api, fec_loader, utilities, vue-frontend). P1B-A wires the path via `sys.path` in `manage.py`; P1B-B will absorb GST's apps into SW's INSTALLED_APPS.
 
 ```
 socialwarehouse/

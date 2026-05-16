@@ -14,7 +14,7 @@ authors = [
 ]
 
 dependencies = [
-    "siege-utilities[geo]>=3.13.0",
+    "siege-utilities[geo]>=3.17.2",
     "Django>=5.2",
     "djangorestframework>=3.16",
     "djangorestframework-gis>=1.0",

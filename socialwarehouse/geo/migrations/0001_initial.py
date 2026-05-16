@@ -289,9 +289,13 @@ class Migration(migrations.Migration):
             model_name='addressboundaryperiod',
             index=models.Index(fields=['redistricting_plan', 'cd_geoid'], name='sw_geo_addr_redistr_379097_idx'),
         ),
-        migrations.AlterUniqueTogether(
-            name='addressboundaryperiod',
-            unique_together={('address', 'vintage', 'redistricting_plan')},
+        migrations.AddConstraint(
+            model_name='addressboundaryperiod',
+            constraint=models.UniqueConstraint(
+                fields=('address', 'vintage', 'redistricting_plan'),
+                name='uniq_addr_vintage_plan_nulls_eq',
+                nulls_distinct=False,
+            ),
         ),
         migrations.AddIndex(
             model_name='countycongressionaldistrictintersection',

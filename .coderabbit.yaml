@@ -8,7 +8,7 @@
 language: en-US
 
 reviews:
-  # Automatically review every PR
+  # Automatically review every PR regardless of target branch
   auto_review:
     enabled: true
     # Don't review draft PRs until they're marked ready

@@ -14,9 +14,12 @@ authors = [
 ]
 
 dependencies = [
-    "siege-utilities[geo]>=3.13.0",
+    "siege-utilities[geo]>=3.17.2",
     "Django>=5.2",
     "djangorestframework>=3.16",
+    "djangorestframework-gis>=1.0",
+    "django-grappelli>=4.0",
+    "django-postgres-copy>=2.7",
     "celery[redis]>=5.6",
     "click>=8.1",
     "geopandas>=1.1",
@@ -66,4 +69,7 @@ select = ["E", "F", "I", "W"]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "socialwarehouse.settings.test"
-pythonpath = ["."]
+# vendor/geodjango_simple_template/app/hellodjango/ must be on pythonpath so
+# `import locations` resolves during pytest (manage.py's sys.path insert
+# doesn't run when pytest loads settings directly).
+pythonpath = [".", "vendor/geodjango_simple_template/app/hellodjango"]

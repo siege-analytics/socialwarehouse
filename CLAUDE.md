@@ -12,14 +12,29 @@ Socialwarehouse is a data warehouse and delta lake for geographic, demographic, 
 
 **siege_utilities** = kitchen equipment — single-serving geographic operations (geocode, boundary lookup, demographics)
 **socialwarehouse** = the restaurant — uses SU's verbs to run geocoding, boundary management, and Census warehousing at massive scale
+**geodjango_simple_template** (GST) = the dining room template — webapp scaffold pulled in as a git submodule at `vendor/geodjango_simple_template/` (pinned). SW uses GST for the web-app side; GST stays independently usable.
 **pure-translation / enterprise** = a franchise — FEC campaign finance application that consumes SW
 
 ## Package Structure
 
-Two packages coexist:
+Three layers coexist:
 
 - `swh/` — CLI tool for Census data downloading and PostGIS loading (pre-existing)
 - `socialwarehouse/` — Django application with geographic warehouse, star schema, DSTK API, Celery tasks
+- `vendor/geodjango_simple_template/` — git submodule (GST), pinned snapshot of [siege-analytics/geodjango_simple_template](https://github.com/siege-analytics/geodjango_simple_template). Provides the `locations` Django app + project-level staticfiles. P1B-B (#68) absorbs GST's `locations` into SW's `INSTALLED_APPS`; URLs mount under `/webapp/` prefix.
+
+## GST integration
+
+`manage.py` adds `vendor/geodjango_simple_template/app/hellodjango/` to `sys.path` so `import locations` resolves. SW's `INSTALLED_APPS` contains `'grappelli'` (admin theme; must precede `'django.contrib.admin'`), `'rest_framework_gis'`, and `'locations'`. SW's `socialwarehouse/urls.py` mounts GST's URL surface under `/webapp/`:
+
+| Path | Source |
+|---|---|
+| `/webapp/grappelli/` | django-grappelli |
+| `/webapp/accounts/` | django.contrib.auth |
+| `/webapp/api-auth/` | rest_framework |
+| `/webapp/locations/` | GST locations app |
+
+GST's `manage.py` and `hellodjango.settings` are not used by SW. SW's `socialwarehouse.settings.*` is the only settings module. To bump the GST pin: `cd vendor/geodjango_simple_template && git fetch && git checkout <new-sha> && cd ../.. && git add vendor/geodjango_simple_template && git commit`.
 
 ```
 socialwarehouse/

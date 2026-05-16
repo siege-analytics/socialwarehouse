@@ -1,0 +1,4 @@
+[submodule "vendor/geodjango_simple_template"]
+	path = vendor/geodjango_simple_template
+	url = git@github.com:siege-analytics/geodjango_simple_template.git
+	branch = main

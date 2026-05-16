@@ -36,8 +36,8 @@ if [ -f "$REPO_ROOT/.env" ]; then
 fi
 
 # Defaults match .env.example so wiki generation works against a fresh
-# checkout. Anything sensitive (passwords, tokens) is intentionally
-# placeholder-only -- the wiki should never carry real credentials.
+# checkout. Anything sensitive (passwords, tokens) stays placeholder-only
+# -- the wiki should never carry real credentials.
 PROJECT_NAME="${PROJECT_NAME:-Social Warehouse}"
 POSTGRES_HOST="${POSTGRES_HOST:-postgis}"
 POSTGRES_USER="${POSTGRES_USER:-socialwarehouse}"

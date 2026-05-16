@@ -21,7 +21,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # fallbacks.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         tzdata build-essential ca-certificates curl \
-        python3-pip python3-venv \
+        python3-pip python3-venv python3-dev \
         gdal-bin libgdal-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 

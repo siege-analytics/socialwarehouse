@@ -6,12 +6,17 @@ Override in development.py, production.py, or test.py as needed.
 """
 
 import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "insecure-dev-key-change-in-production")
 DEBUG = False
 ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
+    # grappelli must precede django.contrib.admin (Grappelli requirement)
+    "grappelli",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -21,11 +26,14 @@ INSTALLED_APPS = [
     "django.contrib.gis",
     # Third party
     "rest_framework",
+    "rest_framework_gis",
     # siege_utilities geographic models
     "siege_utilities.geo.django",
     # socialwarehouse apps
     "socialwarehouse.geo",
     "socialwarehouse.warehouse",
+    # GST apps (via vendor/geodjango_simple_template/ submodule, P1B-B #68)
+    "locations",
 ]
 
 MIDDLEWARE = [
@@ -79,3 +87,9 @@ CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 
 STATIC_URL = "static/"
+
+# Pull GST's project-level staticfiles into Django's collectstatic surface.
+# GST's per-app static dirs are picked up via APP_DIRS automatically.
+STATICFILES_DIRS = [
+    BASE_DIR / "vendor" / "geodjango_simple_template" / "app" / "hellodjango" / "staticfiles",
+]

@@ -18,7 +18,10 @@ up:  ## Start PostGIS + Python (default profile)
 up-spark:  ## Start with Spark cluster
 	$(DKC) --profile spark up -d
 
-up-full:  ## Start everything (Spark + Zeppelin + Maven)
+up-sedonadb:  ## Start with SedonaDB JupyterLab service
+	$(DKC) --profile sedonadb up -d
+
+up-full:  ## Start everything (Spark + Zeppelin + Maven + SedonaDB)
 	$(DKC) --profile full up -d
 
 down:  ## Stop all services

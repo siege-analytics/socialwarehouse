@@ -250,7 +250,29 @@ services:
       timeout: 10s
       retries: 5
 
+  # ---------------------------------------------------------------------------
+  # SedonaDB -- single-node analytical database (Apache Sedona team).
+  # Distributed as a Python library; this container wraps it in JupyterLab
+  # for interactive exploration. Local-dev only (no auth). Opt-in profile.
+  # ---------------------------------------------------------------------------
+  sedonadb:
+    build:
+      context: docker/sedonadb
+      args:
+        - UBUNTU_BASE_IMAGE=${UBUNTU_BASE_IMAGE:-ubuntu:24.04}
+        - PYTHON_VENV_PATH=${PYTHON_VENV_PATH:-/opt/venv}
+    image: swh-sedonadb-image
+    ports:
+      - "127.0.0.1:${SEDONADB_PORT:-8889}:${SEDONADB_PORT:-8889}"
+    environment:
+      - SEDONADB_PORT=${SEDONADB_PORT:-8889}
+    volumes:
+      - swh_sedonadb_data:/home/sedonadb/work
+    restart: unless-stopped
+    profiles: [sedonadb, full]
+
 volumes:
   swh_pg_data:
   swh_neo4j_data:
   swh_neo4j_logs:
+  swh_sedonadb_data:

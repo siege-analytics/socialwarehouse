@@ -26,6 +26,22 @@ Intended growth:
 - Media markets
 - Officials and jurisdictions
 
+## Cloning
+
+This repo uses a git submodule for the GeoDjango template (GST) at `vendor/geodjango_simple_template/`. Clone with submodules:
+
+```bash
+git clone --recurse-submodules git@github.com:siege-analytics/socialwarehouse.git
+```
+
+If you already have a clone without submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
+The GST submodule is a pinned snapshot of [siege-analytics/geodjango_simple_template](https://github.com/siege-analytics/geodjango_simple_template). To bump the pin: `cd vendor/geodjango_simple_template && git fetch && git checkout <new-sha> && cd ../.. && git add vendor/geodjango_simple_template && git commit`.
+
 ## Using
 
 It's recommended to use `make` to run the `docker compose` commands below because we are auto-generating `docker-compose.yml` and `.env` files. Because of the magic of `make`, changes to the source includes will automatically trigger a re-make of the compose files.*See below for more on how to work with the auto-generation*.

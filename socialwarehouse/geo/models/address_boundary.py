@@ -151,7 +151,16 @@ class AddressBoundaryPeriod(models.Model):
 
     class Meta:
         db_table = "sw_geo_address_boundary_period"
-        unique_together = [["address", "vintage", "redistricting_plan"]]
+        # nulls_distinct=False: NULL redistricting_plan means "Census default",
+        # which should be unique per (address, vintage) -- not a distinct row
+        # per NULL as PG's default semantics would have it. Requires PG 15+.
+        constraints = [
+            models.UniqueConstraint(
+                fields=["address", "vintage", "redistricting_plan"],
+                name="uniq_addr_vintage_plan_nulls_eq",
+                nulls_distinct=False,
+            ),
+        ]
         ordering = ["address", "-vintage", "-context_date"]
         verbose_name = "Address Boundary Period"
         verbose_name_plural = "Address Boundary Periods"

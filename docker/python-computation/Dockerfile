@@ -3,7 +3,7 @@
 # Installs GDAL, siege_utilities, and the swh package.
 # The entire repo is mounted at /opt/social_warehouse/ for development.
 
-ARG UBUNTU_BASE_IMAGE=ubuntu:22.04
+ARG UBUNTU_BASE_IMAGE=ubuntu:24.04
 FROM ${UBUNTU_BASE_IMAGE}
 
 ARG PYTHON_VENV_PATH=/opt/venv
@@ -12,7 +12,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # ---- OS packages ----
 RUN apt-get update && apt-get install -y --no-install-recommends \
         tzdata build-essential wget ca-certificates \
-        python3-pip python3-venv python3-pyproj \
+        python3-pip python3-venv python3-dev python3-pyproj \
         gdal-bin libgdal-dev \
         postgresql-client \
         vim \

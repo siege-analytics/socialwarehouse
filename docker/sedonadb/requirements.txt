@@ -1,0 +1,9 @@
+# SedonaDB JupyterLab container Python dependencies.
+
+apache-sedona[db]>=0.3.0
+jupyterlab>=4.2
+geopandas>=1.1
+pandas>=2.2
+pyarrow>=15.0
+shapely>=2.1
+pyproj>=3.7

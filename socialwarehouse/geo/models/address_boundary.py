@@ -12,9 +12,9 @@ mid-cycle. Static boundaries (county, tract) stay the same; political
 boundaries (CD, SLDL, SLDU) differ by active plan.
 
 Example:
-    address=123 Main St, vintage=2020, plan=AL Enacted       → CD-07
-    address=123 Main St, vintage=2020, plan=Milligan Interim  → CD-02
-    address=123 Main St, vintage=2020, plan=Milligan Final    → CD-02
+    address=123 Main St, vintage=2020, plan=AL Enacted       -> CD-07
+    address=123 Main St, vintage=2020, plan=Milligan Interim  -> CD-02
+    address=123 Main St, vintage=2020, plan=Milligan Final    -> CD-02
 """
 
 from django.db import models

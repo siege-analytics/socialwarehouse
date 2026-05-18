@@ -118,7 +118,7 @@ def load_census_to_postgis(
         >>> tables
         {'tabblock20': 'tabblock20_48'}
     """
-    from siege_utilities.connectors import PostGISConnector
+    from siege_utilities.geo.spatial_transformations import PostGISConnector
 
     conn_str = connection_string or settings.database.connection_string
     connector = PostGISConnector(conn_str)

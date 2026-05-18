@@ -135,7 +135,7 @@ def load_voter_file(
         >>> print(f"Loaded {count} voters")
         Loaded 15234567 voters
     """
-    from siege_utilities.connectors import PostGISConnector
+    from siege_utilities.geo.spatial_transformations import PostGISConnector
     from sqlalchemy import text
 
     filepath = Path(filepath)

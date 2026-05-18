@@ -21,6 +21,7 @@ import logging
 from datetime import date as date_type
 
 from django.core.management.base import BaseCommand
+from django.db import models
 from django.utils import timezone
 
 logger = logging.getLogger("socialwarehouse.geo")
@@ -240,6 +241,7 @@ class Command(BaseCommand):
                         failed += 1
                         continue
 
+                    # GeoDjango: transform mutates the point in place; clone first.
                     query_point = addr.geom.clone()
                     query_point.transform(4269)
 

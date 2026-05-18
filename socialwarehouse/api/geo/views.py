@@ -6,13 +6,15 @@ spatial queries.
 """
 
 import json
+import logging
 
 from django.contrib.gis.geos import Point
-from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from rest_framework import status
 from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.response import Response
+
+logger = logging.getLogger("socialwarehouse.api.geo")
 
 from socialwarehouse.api.pagination import GeoJSONPagination, StandardPagination
 from socialwarehouse.api.throttling import BulkExportThrottle, GeocodeThrottle
@@ -244,7 +246,7 @@ def boundary_list(request, boundary_type):
 
 
 @api_view(["GET"])
-@method_decorator(cache_page(60 * 60 * 24 * 7), name="dispatch")
+@cache_page(60 * 60 * 24 * 7)
 def boundary_detail(request, boundary_type, geoid):
     """Retrieve a single boundary by type and GEOID. Always includes geometry."""
     model = BOUNDARY_MODELS.get(boundary_type)
@@ -376,19 +378,32 @@ def intersections(request):
 # --- Internal helpers ---
 
 def _forward_geocode(address):
-    """Forward geocode via Nominatim. Returns (lat, lon) or None."""
+    """Forward geocode via Nominatim. Returns (lat, lon) or None.
+
+    Returns None on miss OR on failure; failures are logged at WARNING so
+    operators can distinguish "no result" from "geocoder down / network /
+    malformed query." Per writing-code:7 (no silent error swallowing).
+    """
     try:
         from siege_utilities.geo.geocoding import get_coordinates
         result = get_coordinates(address, country_codes=["us"])
         if result and result.latitude and result.longitude:
             return (result.latitude, result.longitude)
-    except Exception:
-        pass
-    return None
+        return None
+    except Exception as e:
+        logger.warning(
+            "_forward_geocode failed for address=%r: %s: %s",
+            address, type(e).__name__, e,
+        )
+        return None
 
 
 def _reverse_geocode(lat, lon):
-    """Reverse geocode via Nominatim. Returns address dict or None."""
+    """Reverse geocode via Nominatim. Returns address dict or None.
+
+    Returns None on miss OR on failure; failures are logged at WARNING.
+    Per writing-code:7 (no silent error swallowing).
+    """
     try:
         from geopy.geocoders import Nominatim
         geolocator = Nominatim(user_agent="socialwarehouse-api")
@@ -400,9 +415,13 @@ def _reverse_geocode(lat, lon):
                 "lon": location.longitude,
                 "raw": location.raw.get("address", {}),
             }
-    except Exception:
-        pass
-    return None
+        return None
+    except Exception as e:
+        logger.warning(
+            "_reverse_geocode failed for lat=%s lon=%s: %s: %s",
+            lat, lon, type(e).__name__, e,
+        )
+        return None
 
 
 def _standardize_address(address):

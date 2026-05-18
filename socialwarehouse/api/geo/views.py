@@ -79,6 +79,29 @@ def _serialize_boundary(obj, include_geometry=False):
     return data
 
 
+def _resolve_boundary_model(boundary_type):
+    """Look up a model from BOUNDARY_MODELS or return a 400 Response.
+
+    Single-type lookup helper used by boundary_list, boundary_detail, and
+    proximity. Loop sites (geocode, _get_demographics_for_boundaries) iterate
+    requested types and silently skip unknowns — they do not use this helper.
+
+    Returns:
+        (model, None) on a known boundary_type.
+        (None, Response) with a 400 status and a valid_types list on miss.
+    """
+    model = BOUNDARY_MODELS.get(boundary_type)
+    if model is None:
+        return None, Response(
+            {
+                "error": f"Unknown boundary type: {boundary_type}",
+                "valid_types": list(BOUNDARY_MODELS.keys()),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return model, None
+
+
 @api_view(["GET"])
 @throttle_classes([GeocodeThrottle])
 def geocode(request):
@@ -196,12 +219,9 @@ def standardize_address(request):
 @api_view(["GET"])
 def boundary_list(request, boundary_type):
     """List boundaries of a given type with filtering and pagination."""
-    model = BOUNDARY_MODELS.get(boundary_type)
-    if model is None:
-        return Response(
-            {"error": f"Unknown boundary type: {boundary_type}", "valid_types": list(BOUNDARY_MODELS.keys())},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    model, err = _resolve_boundary_model(boundary_type)
+    if err is not None:
+        return err
 
     qs = model.objects.all()
 
@@ -247,9 +267,9 @@ def boundary_list(request, boundary_type):
 @method_decorator(cache_page(60 * 60 * 24 * 7), name="dispatch")
 def boundary_detail(request, boundary_type, geoid):
     """Retrieve a single boundary by type and GEOID. Always includes geometry."""
-    model = BOUNDARY_MODELS.get(boundary_type)
-    if model is None:
-        return Response({"error": f"Unknown boundary type: {boundary_type}"}, status=status.HTTP_400_BAD_REQUEST)
+    model, err = _resolve_boundary_model(boundary_type)
+    if err is not None:
+        return err
 
     year = request.query_params.get("year")
     qs = model.objects.filter(geoid=geoid)
@@ -283,12 +303,9 @@ def proximity(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    model = BOUNDARY_MODELS.get(btype)
-    if model is None:
-        return Response(
-            {"error": f"Unknown boundary type: {btype}", "valid_types": list(BOUNDARY_MODELS.keys())},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    model, err = _resolve_boundary_model(btype)
+    if err is not None:
+        return err
 
     try:
         point = Point(float(lon), float(lat), srid=4326)

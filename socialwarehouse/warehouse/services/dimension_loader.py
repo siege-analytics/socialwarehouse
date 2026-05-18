@@ -155,6 +155,7 @@ class DimensionLoaderService:
                 cycle_year=cycle_year,
                 defaults={
                     "census_year": cycle_year,
+                    "first_election_year": cycle_year + 2,
                     "effective_start": date(cycle_year + 2, 1, 1),
                     "effective_end": date(cycle_year + 12, 1, 1),
                 },

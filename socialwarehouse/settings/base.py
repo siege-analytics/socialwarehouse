@@ -10,6 +10,10 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+# Dev-only fallback. Production settings overrides this with a fail-fast
+# os.environ["DJANGO_SECRET_KEY"] read (ST1 / SW#139); production deployments
+# that forget the env var get a KeyError at startup rather than silently
+# running with the insecure default below.
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "insecure-dev-key-change-in-production")
 DEBUG = False
 ALLOWED_HOSTS = []

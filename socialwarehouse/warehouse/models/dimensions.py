@@ -234,6 +234,21 @@ class DimTime(models.Model):
         validators=[MinValueValidator(1), MaxValueValidator(12)],
     )
     day_of_year = models.PositiveSmallIntegerField()
+    day_of_month = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(31)],
+        default=1,
+        help_text="Day of calendar month (1-31)",
+    )
+    day_of_week = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(0), MaxValueValidator(6)],
+        default=0,
+        help_text="Python weekday() convention: 0=Monday, 6=Sunday",
+    )
+    week_of_year = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(53)],
+        default=1,
+        help_text="ISO week number (1-53)",
+    )
     is_census_day = models.BooleanField(
         default=False,
         help_text="True on April 1 of decennial Census years (2000, 2010, 2020)",
@@ -242,8 +257,19 @@ class DimTime(models.Model):
         default=False,
         help_text="True on the first Tuesday after first Monday in November",
     )
-    fiscal_year = models.PositiveSmallIntegerField(
-        help_text="Federal fiscal year (Oct-Sep)",
+    is_presidential_election = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="True on presidential general election day (every 4 years)",
+    )
+    is_midterm_election = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="True on midterm general election day (every 4 years, offset from presidential)",
+    )
+    federal_fiscal_year = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Federal fiscal year (Oct-Sep). FY starts Oct 1 of (calendar_year - 1).",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -273,11 +299,23 @@ class DimRedistrictingCycle(models.Model):
         validators=[MinValueValidator(1960), MaxValueValidator(2040)],
         help_text="Redistricting cycle year (e.g. 2010, 2020, 2030)",
     )
-    decennial_census_year = models.PositiveSmallIntegerField(
-        help_text="Corresponding decennial Census year",
+    census_year = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Corresponding decennial Census year (typically equals cycle_year). 0 = unset.",
     )
     first_election_year = models.PositiveSmallIntegerField(
-        help_text="First general election under this plan",
+        default=0,
+        help_text="First general election under this plan (typically cycle_year + 2). 0 = unset.",
+    )
+    effective_start = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Start date of this cycle's effective period (typically Jan 1 of first_election_year)",
+    )
+    effective_end = models.DateField(
+        null=True,
+        blank=True,
+        help_text="End date of effective period (typically start of next cycle's effective period)",
     )
     notes = models.TextField(
         blank=True,

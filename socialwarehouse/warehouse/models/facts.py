@@ -245,6 +245,7 @@ class FactRedistrictingPlan(models.Model):
     class Meta:
         db_table = "sw_fact_redistricting_plan"
         verbose_name = "Redistricting Plan Fact"
+        unique_together = [("geography", "cycle", "chamber", "plan_type", "district_number")]
         indexes = [
             models.Index(fields=["geography", "cycle"]),
             models.Index(fields=["cycle", "chamber"]),

@@ -60,6 +60,8 @@ def cli():
 def download_census(state, all_states, year, boundary_type):
     """Download Census TIGER shapefiles.
 
+    Exits non-zero if any per-boundary-type download fails (S1 / #131).
+
     Examples:
         swh download-census --state 48
         swh download-census --state 48 --state 06 -b tabblock20 -b county
@@ -68,15 +70,35 @@ def download_census(state, all_states, year, boundary_type):
     from swh.census import download_census_boundaries, download_all_states
 
     boundary_types = list(boundary_type) if boundary_type else None
+    total_failed = 0
 
     if all_states:
-        download_all_states(boundary_types=boundary_types, year=year)
+        all_results = download_all_states(boundary_types=boundary_types, year=year)
+        for fips, result in all_results.items():
+            if result.any_failed:
+                click.echo(
+                    f"State {fips}: {len(result.successes)} ok, "
+                    f"{len(result.failures)} failed -- {list(result.failures.keys())}",
+                    err=True,
+                )
+                total_failed += len(result.failures)
     elif state:
         for s in state:
-            download_census_boundaries(s.zfill(2), boundary_types=boundary_types, year=year)
+            result = download_census_boundaries(s.zfill(2), boundary_types=boundary_types, year=year)
+            if result.any_failed:
+                click.echo(
+                    f"State {s}: {len(result.successes)} ok, "
+                    f"{len(result.failures)} failed -- {list(result.failures.keys())}",
+                    err=True,
+                )
+                total_failed += len(result.failures)
     else:
         click.echo("Provide --state <FIPS> or --all-states")
         sys.exit(1)
+
+    if total_failed:
+        click.echo(f"Total per-boundary-type failures: {total_failed}", err=True)
+        sys.exit(2)
 
 
 @cli.command("load-census")
@@ -88,6 +110,9 @@ def download_census(state, all_states, year, boundary_type):
 def load_census(state, all_states, year, boundary_type, schema):
     """Download Census boundaries and load into PostGIS.
 
+    Exits non-zero if any per-boundary-type download or upload fails
+    (S1 / #131).
+
     Examples:
         swh load-census --state 48
         swh load-census --all-states --schema census
@@ -95,18 +120,40 @@ def load_census(state, all_states, year, boundary_type, schema):
     from swh.census import load_census_to_postgis, load_all_states_to_postgis
 
     boundary_types = list(boundary_type) if boundary_type else None
+    total_failed = 0
 
     if all_states:
-        tables = load_all_states_to_postgis(boundary_types=boundary_types, year=year, schema=schema)
-        total = sum(len(v) for v in tables.values())
-        click.echo(f"Loaded {total} tables across {len(tables)} states")
+        all_results = load_all_states_to_postgis(
+            boundary_types=boundary_types, year=year, schema=schema
+        )
+        total_ok = sum(len(r.successes) for r in all_results.values())
+        click.echo(f"Loaded {total_ok} tables across {len(all_results)} states")
+        for fips, result in all_results.items():
+            if result.any_failed:
+                click.echo(
+                    f"State {fips}: failures -- {list(result.failures.keys())}",
+                    err=True,
+                )
+                total_failed += len(result.failures)
     elif state:
         for s in state:
-            tables = load_census_to_postgis(s.zfill(2), boundary_types=boundary_types, year=year, schema=schema)
-            click.echo(f"State {s}: loaded {len(tables)} tables")
+            result = load_census_to_postgis(
+                s.zfill(2), boundary_types=boundary_types, year=year, schema=schema
+            )
+            click.echo(f"State {s}: loaded {len(result.successes)} tables")
+            if result.any_failed:
+                click.echo(
+                    f"State {s}: failures -- {list(result.failures.keys())}",
+                    err=True,
+                )
+                total_failed += len(result.failures)
     else:
         click.echo("Provide --state <FIPS> or --all-states")
         sys.exit(1)
+
+    if total_failed:
+        click.echo(f"Total per-boundary-type failures: {total_failed}", err=True)
+        sys.exit(2)
 
 
 @cli.command("load-voters")

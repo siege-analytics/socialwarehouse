@@ -55,6 +55,10 @@ jobs:
       CENSUS_YEAR: "2023"
       CENSUS_CONGRESSIONAL_SESSION: "118"
       CENSUS_STATE_FIPS: all
+      # delta/config.py validates S3 creds at import when WAREHOUSE_ROOT
+      # is s3a://. CI has no S3; point it at a local path so the
+      # validator's file:// carve-out applies. (D5 / SW#127)
+      SW_WAREHOUSE_ROOT: file:///tmp/sw-warehouse-ci
 
     steps:
       - uses: actions/checkout@v4

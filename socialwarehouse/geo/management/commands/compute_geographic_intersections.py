@@ -10,13 +10,44 @@ Usage:
     python manage.py compute_geographic_intersections --year 2020
     python manage.py compute_geographic_intersections --year 2020 --state 06
     python manage.py compute_geographic_intersections --year 2020 --type county-cd
+
+Implementation note (M5 / SW#149):
+    Geometry math runs server-side via GeoDjango ORM functions
+    (Intersection, Area, Transform). Areas are measured in a projected
+    metric CRS — the SRID is picked per-region by state-FIPS prefix.
+    See socialwarehouse/geo/projection.py for the lookup, and
+    docs/designs/m5-postgis-st-intersection.md for the rationale.
 """
 
 import logging
 
+from django.contrib.gis.db.models.functions import Area, Intersection, Transform
+from django.contrib.gis.geos import MultiPolygon, Polygon
 from django.core.management.base import BaseCommand
 
+from socialwarehouse.geo.projection import area_srid_for_geoid
+
 logger = logging.getLogger("socialwarehouse.geo")
+
+
+def _as_multipolygon(geom):
+    """Coerce a GEOSGeometry to MultiPolygon for storage in MultiPolygonField.
+
+    ST_Intersection can return Polygon, MultiPolygon, or GeometryCollection.
+    The target column is MultiPolygonField; everything else needs wrapping or
+    filtering. GeometryCollections from edge-touching pairs are treated as
+    empty for storage purposes.
+    """
+    if geom is None or geom.empty:
+        return None
+    if isinstance(geom, MultiPolygon):
+        return geom
+    if isinstance(geom, Polygon):
+        return MultiPolygon(geom, srid=geom.srid)
+    polys = [g for g in geom if isinstance(g, Polygon)] if hasattr(geom, "__iter__") else []
+    if not polys:
+        return None
+    return MultiPolygon(polys, srid=geom.srid)
 
 
 class Command(BaseCommand):
@@ -66,21 +97,38 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Processing {total} counties...")
 
-        for i, county in enumerate(counties, 1):
-            cds = CongressionalDistrict.objects.filter(
-                vintage_year=year,
-                geom__intersects=county.geom,
+        for i, county in enumerate(counties.iterator(), 1):
+            srid = area_srid_for_geoid(county.geoid)
+
+            cd_rows = list(
+                CongressionalDistrict.objects
+                .filter(vintage_year=year, geom__intersects=county.geom)
+                .annotate(
+                    sw_intersection_geom=Intersection("geom", county.geom),
+                    sw_intersection_area=Area(
+                        Transform(Intersection("geom", county.geom), srid)
+                    ),
+                    sw_cd_area=Area(Transform("geom", srid)),
+                )
             )
 
-            for cd in cds:
+            county_area_sqm = (
+                County.objects
+                .filter(pk=county.pk)
+                .annotate(sw_area=Area(Transform("geom", srid)))
+                .values_list("sw_area", flat=True)
+                .first()
+            )
+            county_area = float(county_area_sqm.sq_m) if county_area_sqm else 0.0
+
+            for cd in cd_rows:
                 try:
-                    intersection_geom = county.geom.intersection(cd.geom)
-                    if intersection_geom.empty:
+                    intersection_geom = _as_multipolygon(cd.sw_intersection_geom)
+                    if intersection_geom is None:
                         continue
 
-                    intersection_area = intersection_geom.area
-                    county_area = county.geom.area
-                    cd_area = cd.geom.area
+                    intersection_area = float(cd.sw_intersection_area.sq_m)
+                    cd_area = float(cd.sw_cd_area.sq_m)
 
                     pct_county = (intersection_area / county_area * 100) if county_area > 0 else 0
                     pct_cd = (intersection_area / cd_area * 100) if cd_area > 0 else 0
@@ -134,21 +182,38 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Processing {total} VTDs...")
 
-        for i, vtd in enumerate(vtds, 1):
-            cds = CongressionalDistrict.objects.filter(
-                vintage_year=year,
-                geom__intersects=vtd.geom,
+        for i, vtd in enumerate(vtds.iterator(), 1):
+            srid = area_srid_for_geoid(vtd.geoid)
+
+            cd_rows = list(
+                CongressionalDistrict.objects
+                .filter(vintage_year=year, geom__intersects=vtd.geom)
+                .annotate(
+                    sw_intersection_geom=Intersection("geom", vtd.geom),
+                    sw_intersection_area=Area(
+                        Transform(Intersection("geom", vtd.geom), srid)
+                    ),
+                    sw_cd_area=Area(Transform("geom", srid)),
+                )
             )
 
-            for cd in cds:
+            vtd_area_sqm = (
+                VTD.objects
+                .filter(pk=vtd.pk)
+                .annotate(sw_area=Area(Transform("geom", srid)))
+                .values_list("sw_area", flat=True)
+                .first()
+            )
+            vtd_area = float(vtd_area_sqm.sq_m) if vtd_area_sqm else 0.0
+
+            for cd in cd_rows:
                 try:
-                    intersection_geom = vtd.geom.intersection(cd.geom)
-                    if intersection_geom.empty:
+                    intersection_geom = _as_multipolygon(cd.sw_intersection_geom)
+                    if intersection_geom is None:
                         continue
 
-                    intersection_area = intersection_geom.area
-                    vtd_area = vtd.geom.area
-                    cd_area = cd.geom.area
+                    intersection_area = float(cd.sw_intersection_area.sq_m)
+                    cd_area = float(cd.sw_cd_area.sq_m)
 
                     pct_vtd = (intersection_area / vtd_area * 100) if vtd_area > 0 else 0
                     pct_cd = (intersection_area / cd_area * 100) if cd_area > 0 else 0

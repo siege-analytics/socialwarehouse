@@ -10,6 +10,15 @@ Usage:
     python manage.py geocode_addresses --state TX
     python manage.py geocode_addresses --source census-only
     python manage.py geocode_addresses --dry-run
+
+Memory + DB-discipline notes (M1/M2/M3 fixes, SW#145-#147):
+  - Addresses are streamed via .iterator() in batches; no full materialization.
+  - Per-batch results are flushed via bulk_update, not per-row .save().
+  - No pre-loop qs.count() (which re-executes the SELECT when followed by
+    iterator()); counts are reported post-loop from observed values.
+
+See docs/entities/address.md for the canonical Address contract, the
+chunked-iterator + bulk_update recipe, and the fixed-gotchas log.
 """
 
 import logging
@@ -19,6 +28,20 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 logger = logging.getLogger("socialwarehouse.geo")
+
+
+# Fields that Census or Nominatim phases may mutate. bulk_update touches
+# only these; unchanged fields stay untouched. Order does not matter.
+ADDRESS_BULK_UPDATE_FIELDS = [
+    "latitude", "longitude", "geom",
+    "geocoded", "geocode_source", "geocode_quality", "geocoded_at",
+    "state_geoid", "county_geoid", "tract_geoid",
+    "block_group_geoid", "block_geoid",
+]
+
+# Default Django bulk_update batching. Keeps single UPDATE statements
+# bounded; tuned to roughly match the Census-API chunk shape.
+DB_BULK_CHUNK = 500
 
 
 class Command(BaseCommand):
@@ -62,96 +85,119 @@ class Command(BaseCommand):
         if state:
             qs = qs.filter(state_abbreviation=state.upper())
 
-        total = qs.count()
-        process_count = min(limit, total) if limit else total
-
         self.stdout.write(
-            f"Found {total} ungeocoded addresses"
+            f"Geocoding ungeocoded addresses"
             f"{f' in {state.upper()}' if state else ''}"
-            f", will process {process_count}"
+            f"{f' (limit={limit})' if limit else ''}"
+            f"..."
         )
 
         if dry_run:
-            self.stdout.write(self.style.SUCCESS("[DRY RUN] No changes made."))
+            # For dry-run only, a single count is worth the query.
+            dry_total = qs.count()
+            dry_process = min(limit, dry_total) if limit else dry_total
+            self.stdout.write(
+                f"[DRY RUN] Would process {dry_process} of {dry_total} addresses. No changes made."
+            )
             return
 
-        if process_count == 0:
-            self.stdout.write("Nothing to geocode.")
-            return
-
-        # Phase 1: Census batch geocoder
+        # Tracking state. census_unmatched is now a list of Address objects
+        # (not just pks) so Phase 2 doesn't need the in-memory address_map.
+        census_processed = 0
         census_matched = 0
-        census_unmatched_ids = []
+        census_unmatched = []  # list[Address]
+        nominatim_processed = 0
+        nominatim_matched = 0
 
+        # Phase 1: Census batch geocoder. Streams chunks of addresses through
+        # the batch API; flushes UPDATEs per chunk via bulk_update.
         if source in ("dual", "census-only"):
             self.stdout.write("Phase 1: Census batch geocoding...")
 
-            batch_input = []
-            address_map = {}
             addr_qs = qs[:limit] if limit else qs
 
-            for addr in addr_qs.iterator():
-                street = " ".join(filter(None, [
-                    addr.primary_number, addr.street_name, addr.street_suffix,
-                ]))
-                batch_input.append({
-                    "id": str(addr.pk),
-                    "street": street,
-                    "city": addr.city_name or "",
-                    "state": addr.state_abbreviation or "",
-                    "zipcode": addr.zip5 or "",
-                })
-                address_map[str(addr.pk)] = addr
-
-            results = geocode_batch_chunked(batch_input, chunk_size=batch_size)
-
-            for result in results:
-                addr_pk = result.input_id
-                if addr_pk not in address_map:
+            for addr_chunk in _yield_chunks(addr_qs.iterator(chunk_size=batch_size), batch_size):
+                if not addr_chunk:
                     continue
 
-                addr = address_map[addr_pk]
-                if result.matched:
-                    addr.latitude = result.lat
-                    addr.longitude = result.lon
-                    if result.lat and result.lon:
-                        addr.geom = Point(result.lon, result.lat, srid=4326)
-                    addr.geocoded = True
-                    addr.geocode_source = "census"
-                    addr.geocode_quality = result.match_type
-                    addr.geocoded_at = timezone.now()
-                    addr.assign_census_units_from_fips(
-                        result.state_fips, result.county_fips,
-                        result.tract, result.block,
+                batch_input = []
+                chunk_map = {}
+                for addr in addr_chunk:
+                    street = " ".join(filter(None, [
+                        addr.primary_number, addr.street_name, addr.street_suffix,
+                    ]))
+                    pk_str = str(addr.pk)
+                    batch_input.append({
+                        "id": pk_str,
+                        "street": street,
+                        "city": addr.city_name or "",
+                        "state": addr.state_abbreviation or "",
+                        "zipcode": addr.zip5 or "",
+                    })
+                    chunk_map[pk_str] = addr
+
+                results = geocode_batch_chunked(batch_input, chunk_size=batch_size)
+
+                pending_updates = []
+                for result in results:
+                    addr = chunk_map.get(result.input_id)
+                    if addr is None:
+                        continue
+                    if result.matched:
+                        addr.latitude = result.lat
+                        addr.longitude = result.lon
+                        if result.lat and result.lon:
+                            addr.geom = Point(result.lon, result.lat, srid=4326)
+                        addr.geocoded = True
+                        addr.geocode_source = "census"
+                        addr.geocode_quality = result.match_type
+                        addr.geocoded_at = timezone.now()
+                        addr.assign_census_units_from_fips(
+                            result.state_fips, result.county_fips,
+                            result.tract, result.block,
+                        )
+                        pending_updates.append(addr)
+                        census_matched += 1
+                    else:
+                        census_unmatched.append(addr)
+
+                if pending_updates:
+                    Address.objects.bulk_update(
+                        pending_updates,
+                        ADDRESS_BULK_UPDATE_FIELDS,
+                        batch_size=DB_BULK_CHUNK,
                     )
-                    addr.save()
-                    census_matched += 1
-                else:
-                    census_unmatched_ids.append(addr_pk)
+
+                census_processed += len(addr_chunk)
 
             self.stdout.write(
-                f"Census: {census_matched} matched, {len(census_unmatched_ids)} unmatched"
+                f"Census: processed {census_processed}, "
+                f"matched {census_matched}, unmatched {len(census_unmatched)}"
             )
 
-        # Phase 2: Nominatim fallback
-        nominatim_matched = 0
-
+        # Phase 2: Nominatim fallback. Same streaming + bulk_update shape.
         if source in ("dual", "nominatim-only"):
             if source == "nominatim-only":
-                nominatim_addrs = list((qs[:limit] if limit else qs).iterator())
+                nominatim_source = (qs[:limit] if limit else qs).iterator(chunk_size=batch_size)
             else:
-                nominatim_addrs = [
-                    address_map[pk] for pk in census_unmatched_ids if pk in address_map
-                ]
+                # In dual mode, the census_unmatched list IS our source. It
+                # is already in memory because the Census phase had to map
+                # results back to addresses. Stream it through the same
+                # chunk-and-flush pattern for consistency.
+                nominatim_source = iter(census_unmatched)
 
-            if nominatim_addrs:
-                self.stdout.write(f"Phase 2: Nominatim geocoding ({len(nominatim_addrs)} addresses)...")
+            self.stdout.write("Phase 2: Nominatim geocoding...")
 
-                nom_kwargs = {}
-                if nominatim_url:
-                    nom_kwargs["server_url"] = nominatim_url
+            nom_kwargs = {}
+            if nominatim_url:
+                nom_kwargs["server_url"] = nominatim_url
 
-                for addr in nominatim_addrs:
+            for addr_chunk in _yield_chunks(nominatim_source, DB_BULK_CHUNK):
+                if not addr_chunk:
+                    continue
+
+                pending_updates = []
+                for addr in addr_chunk:
                     query = ", ".join(filter(None, [
                         " ".join(filter(None, [
                             addr.primary_number, addr.street_name, addr.street_suffix,
@@ -176,14 +222,42 @@ class Command(BaseCommand):
                         addr.geocode_source = "nominatim"
                         addr.geocode_quality = "Approximate"
                         addr.geocoded_at = timezone.now()
-                        addr.save()
+                        pending_updates.append(addr)
                         nominatim_matched += 1
 
-                self.stdout.write(f"Nominatim: {nominatim_matched} matched")
+                if pending_updates:
+                    Address.objects.bulk_update(
+                        pending_updates,
+                        ADDRESS_BULK_UPDATE_FIELDS,
+                        batch_size=DB_BULK_CHUNK,
+                    )
 
+                nominatim_processed += len(addr_chunk)
+
+            self.stdout.write(
+                f"Nominatim: processed {nominatim_processed}, matched {nominatim_matched}"
+            )
+
+        total_processed = max(census_processed, nominatim_processed)
         total_matched = census_matched + nominatim_matched
         self.stdout.write(self.style.SUCCESS(
-            f"Done: {total_matched}/{process_count} geocoded "
+            f"Done: {total_matched}/{total_processed} geocoded "
             f"(Census: {census_matched}, Nominatim: {nominatim_matched}, "
-            f"Failed: {process_count - total_matched})"
+            f"Failed: {total_processed - total_matched})"
         ))
+
+
+def _yield_chunks(iterable, chunk_size):
+    """Yield successive chunks of size <= chunk_size from any iterable.
+
+    Caps memory at O(chunk_size). Each chunk is released for GC after the
+    consumer is done with it (assuming no external references).
+    """
+    chunk = []
+    for item in iterable:
+        chunk.append(item)
+        if len(chunk) >= chunk_size:
+            yield chunk
+            chunk = []
+    if chunk:
+        yield chunk

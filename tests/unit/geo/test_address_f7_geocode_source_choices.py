@@ -32,9 +32,12 @@ class TestF7GeocodeSourceChoices(SimpleTestCase):
         field = Address._meta.get_field("geocode_source")
         assert field.choices == tuple(GEOCODE_SOURCE_CHOICES) or list(field.choices) == list(GEOCODE_SOURCE_CHOICES)
 
-    def test_field_keeps_nullable_for_legacy_data(self):
-        # Pre-F7 the field was nullable; F7 only added choices=.
-        # null=True preserved so existing NULL rows are not broken.
-        # (F3 / SW#92 is the open ticket that would tighten this further.)
+    def test_field_is_not_nullable_post_f3(self):
+        # F7 (this PR) preserved nullable. F3 / SW#92 tightened the field
+        # to NOT NULL with default="" (Django convention). After F3 the
+        # field's null attribute is False; existing NULL rows were
+        # backfilled to "" in migration 0003 before the schema change.
         field = Address._meta.get_field("geocode_source")
-        assert field.null is True
+        assert field.null is False
+        assert field.blank is True
+        assert field.default == ""

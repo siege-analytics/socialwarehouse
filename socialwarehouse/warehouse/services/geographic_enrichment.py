@@ -34,7 +34,9 @@ class GeographicEnrichmentService:
         from socialwarehouse.warehouse.models import DimGeography, FactACSEstimate
 
         qs = Address.objects.filter(
-            tract_geoid__isnull=False,
+            # Post-F3/SW#92: tract_geoid is NOT NULL; "" means "not yet
+            # assigned." `__isnull=False` would match every row.
+            tract_geoid__gt="",
             census_year=vintage_year,
         )
         if state_fips:
@@ -111,7 +113,9 @@ class GeographicEnrichmentService:
         from siege_utilities.geo.django.models import Tract
 
         qs = Address.objects.filter(
-            tract_geoid__isnull=False,
+            # Post-F3/SW#92: tract_geoid is NOT NULL; "" means "not yet
+            # assigned." `__isnull=False` would match every row.
+            tract_geoid__gt="",
             census_year=vintage_year,
         )
         if state_fips:
@@ -185,7 +189,9 @@ class GeographicEnrichmentService:
         # Find addresses assigned under source vintage but not target
         source_periods = AddressBoundaryPeriod.objects.filter(
             vintage=source_vintage,
-            tract_geoid__isnull=False,
+            # Post-F3/SW#92: tract_geoid is NOT NULL; "" means "not yet
+            # assigned." `__isnull=False` would match every row.
+            tract_geoid__gt="",
         ).exclude(
             address__boundary_periods__vintage=target_vintage,
         )

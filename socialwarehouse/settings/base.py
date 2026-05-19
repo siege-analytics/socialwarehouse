@@ -6,9 +6,27 @@ Override in development.py, production.py, or test.py as needed.
 """
 
 import os
+import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# GST submodule wiring: insert the GST Django app directory into sys.path
+# so `import locations` resolves when Django processes INSTALLED_APPS.
+#
+# This MUST run before INSTALLED_APPS is referenced by Django -- which
+# means it must run at settings module-load time, not at manage.py time.
+# Pre-fix (ST3 / SW#141) the sys.path insert lived only in manage.py;
+# any entry point that bypassed manage.py (wsgi.py / asgi.py / pytest /
+# ad-hoc `from socialwarehouse.settings import base`) hit
+# `ModuleNotFoundError: No module named 'locations'` at startup.
+#
+# Putting it here makes every entry point that loads settings get the
+# wiring automatically. manage.py's redundant insert is preserved as
+# defense-in-depth but is no longer load-bearing.
+_GST_APP_DIR = BASE_DIR / "vendor" / "geodjango_simple_template" / "app" / "hellodjango"
+if _GST_APP_DIR.is_dir() and str(_GST_APP_DIR) not in sys.path:
+    sys.path.insert(0, str(_GST_APP_DIR))
 
 # Dev-only fallback. Production settings overrides this with a fail-fast
 # os.environ["DJANGO_SECRET_KEY"] read (ST1 / SW#139); production deployments

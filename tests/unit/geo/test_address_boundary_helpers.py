@@ -340,11 +340,13 @@ class TestCurrentGeoid(TestCase):
 class TestBoundaryTimeline(TestCase):
     """boundary_timeline: chronological list of BoundaryTimelineEntry tuples.
 
-    Plan-bound effective-range derivation requires real siege_utilities
-    RedistrictingPlan rows; this unit suite exercises the NULL-plan
-    path (vintage-derived dates), the orphan-FK path (treated as
-    NULL-plan), and the ordering / shape contract. End-to-end coverage
-    of the plan-bound path lives in integration tests.
+    Effective ranges are derived from ABP rows' ``context_date`` field
+    (entry N's effective_to = entry N+1's effective_from - 1 day; the
+    most recent entry's effective_to is None). Plan-side effective
+    dates are NOT consulted today (SU#527 — RedistrictingPlan declares
+    `effective_from` / `effective_to` but the SU migrations don't
+    create those columns). When SU#527 lands and SW bumps its pin, a
+    follow-up should restore plan-side date preference where available.
     """
 
     def setUp(self):
@@ -390,19 +392,28 @@ class TestBoundaryTimeline(TestCase):
         assert timeline[1].abp == self.abp_2020
         assert timeline[2].abp == self.abp_orphan
 
-    def test_null_plan_range_comes_from_vintage(self):
+    def test_effective_range_threads_through_context_date(self):
         timeline = self.addr.boundary_timeline("cd")
-        entry_2010 = timeline[0]
-        assert entry_2010.effective_from == date(2010, 1, 1)
-        assert entry_2010.effective_to == date(2019, 12, 31)
-        assert entry_2010.plan_name is None
+        # Entry 0 (oldest): from its own context_date, to the day before entry 1.
+        assert timeline[0].effective_from == date(2015, 6, 1)
+        assert timeline[0].effective_to == date(2021, 5, 31)
+        # Entry 1: from its context_date, to the day before entry 2.
+        assert timeline[1].effective_from == date(2021, 6, 1)
+        assert timeline[1].effective_to == date(2024, 5, 31)
+        # Entry 2 (newest): from its context_date; effective_to is None.
+        assert timeline[2].effective_from == date(2024, 6, 1)
+        assert timeline[2].effective_to is None
 
-    def test_orphan_fk_treated_as_null_plan(self):
+    def test_plan_name_is_none_for_null_plan_rows(self):
         timeline = self.addr.boundary_timeline("cd")
-        orphan_entry = timeline[2]
-        assert orphan_entry.effective_from == date(2020, 1, 1)
-        assert orphan_entry.effective_to == date(2029, 12, 31)
-        assert orphan_entry.plan_name is None
+        assert timeline[0].plan_name is None
+        assert timeline[1].plan_name is None
+
+    def test_orphan_fk_resolves_plan_name_to_none(self):
+        # redistricting_plan_id=999_999 doesn't exist; _safe_plan_name
+        # returns None without raising.
+        timeline = self.addr.boundary_timeline("cd")
+        assert timeline[2].plan_name is None
 
     def test_entry_carries_geoid_and_abp(self):
         timeline = self.addr.boundary_timeline("cd")
@@ -414,8 +425,8 @@ class TestBoundaryTimeline(TestCase):
         timeline = self.addr.boundary_timeline("cd")
         geoid, eff_from, eff_to, plan_name, abp = timeline[0]
         assert geoid == "0107"
-        assert eff_from == date(2010, 1, 1)
-        assert eff_to == date(2019, 12, 31)
+        assert eff_from == date(2015, 6, 1)
+        assert eff_to == date(2021, 5, 31)
         assert plan_name is None
         assert abp == self.abp_2010
 

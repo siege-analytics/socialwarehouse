@@ -13,7 +13,6 @@ Usage:
 
 import logging
 import os
-from functools import lru_cache
 
 logger = logging.getLogger("socialwarehouse.delta")
 
@@ -24,14 +23,26 @@ S3_ACCESS_KEY = os.environ.get("S3_ACCESS_KEY", "")
 S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY", "")
 
 
-@lru_cache(maxsize=1)
 def get_spark_session(app_name="socialwarehouse", enable_sedona=False):
     """Get or create a SparkSession configured for Delta Lake.
 
+    Idempotent via Spark's own `SparkSession.builder.getOrCreate()` — that
+    is the canonical singleton mechanism for a given JVM. An additional
+    @lru_cache layer would be wrong here: a parameterized function with a
+    cache_key based on (app_name, enable_sedona) evicts prior cached
+    sessions WITHOUT calling .stop() when called with different arg
+    combinations, leaking JVM-side state (SparkContext, scheduler, UI
+    server). The @lru_cache decorator was removed in fix for SW#126 (D4).
+
     Args:
-        app_name: Spark application name.
+        app_name: Spark application name. NOTE: only the FIRST call's
+            app_name takes effect for the JVM session; subsequent calls
+            return the existing session regardless of app_name. This is
+            standard Spark behavior, not a bug.
         enable_sedona: If True, register Apache Sedona UDTs and UDFs for
-            spatial operations within Spark.
+            spatial operations within Spark. If the session already
+            exists without Sedona, this call DOES register Sedona on the
+            existing session (registration is idempotent).
 
     Returns:
         SparkSession with Delta Lake extensions.

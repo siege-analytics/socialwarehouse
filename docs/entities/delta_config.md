@@ -19,8 +19,8 @@ Spark + Delta Lake configuration. Two public functions:
 |---|---|---|---|
 | `WAREHOUSE_ROOT` | `SW_WAREHOUSE_ROOT` | `"s3a://socialwarehouse"` | Root path for tier directories. |
 | `S3_ENDPOINT` | `S3_ENDPOINT` | `"http://10.10.0.10:9000"` | S3 / MinIO endpoint URL. |
-| `S3_ACCESS_KEY` | `S3_ACCESS_KEY` | `""` | **Empty default — D5/#127 open** (silent misconfig). |
-| `S3_SECRET_KEY` | `S3_SECRET_KEY` | `""` | **Empty default — D5/#127 open** (silent misconfig). |
+| `S3_ACCESS_KEY` | `S3_ACCESS_KEY` | `""` | Empty default; validated at module-load (D5 fix). |
+| `S3_SECRET_KEY` | `S3_SECRET_KEY` | `""` | Empty default; validated at module-load (D5 fix). |
 
 ## Singleton semantics (post-D4 fix)
 
@@ -46,10 +46,11 @@ Spark + Delta Lake configuration. Two public functions:
 ## Known assumptions / gotchas
 
 - **`getOrCreate()` is the singleton mechanism.** Post-D4 fix (SW#126): `@lru_cache(maxsize=1)` was removed. Adding it back would re-introduce the eviction-without-stop leak. Don't.
-- **`S3_ACCESS_KEY` / `S3_SECRET_KEY` default to empty string.** D5/#127 open. When unset, Spark gets `""` credentials and the failure surfaces as opaque AWS SDK errors mid-query rather than a clear ConfigError at startup. Fix: validate at module-load if `WAREHOUSE_ROOT` is `s3a://`.
+- **`S3_ACCESS_KEY` / `S3_SECRET_KEY` are validated at module-load.** Post-D5/SW#127 fix: `_validate_s3_credentials()` runs at import time. If `WAREHOUSE_ROOT` starts with `s3a://` / `s3://` / `s3n://` AND either credential env var is empty, raises `RuntimeError` naming the missing env vars. Carve-out: a non-S3 warehouse root (e.g. `file:///tmp/sw-warehouse` for local dev) skips validation. Pre-fix the empty strings were silently passed to Spark's hadoop config and surfaced as opaque AWS SDK errors mid-query (often hours into a job). Same anti-pattern as the Django `POSTGRES_PASSWORD` empty-string default in `settings/base.py` (ST4); separate scope.
 - **First-call wins for `app_name`.** Calling `get_spark_session(app_name="X")` then `get_spark_session(app_name="Y")` returns the X-named session both times. Standard Spark behavior. Subsequent renaming requires stopping the existing session first.
 - **`enable_sedona=False` followed by `enable_sedona=True` DOES register Sedona** on the existing session (since Sedona registration is idempotent at runtime). Useful for notebooks that start non-spatial and add spatial later.
 
 ## Survey log
 
 - 2026-05-18: Seeded via survey-context NO-DOC path during D4 / SW#126 fix. `@lru_cache(maxsize=1)` decorator removed; docstring expanded to name why `getOrCreate()` is the singleton mechanism and what the lru_cache anti-pattern was. D5/#127 (empty-string S3 credential defaults) remains open.
+- 2026-05-19: D5 / SW#127 fixed. `_validate_s3_credentials()` runs at module-load and raises `RuntimeError` if `WAREHOUSE_ROOT` is `s3a://` / `s3://` / `s3n://` while `S3_ACCESS_KEY` or `S3_SECRET_KEY` is empty. Non-S3 roots (e.g. `file://` for local dev) skip validation. Failure mode moves from opaque mid-query AWS SDK errors to a clear startup-time RuntimeError naming the missing env vars.

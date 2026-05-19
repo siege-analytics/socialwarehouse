@@ -116,14 +116,29 @@ def load_census(state, all_states, year, boundary_type, schema):
 @click.option("--lat-col", default="vb_tsmart_latitude", help="Latitude column name")
 @click.option("--chunk-size", default=50_000, type=int, help="Rows per chunk")
 @click.option("--schema", default="public", help="PostGIS schema")
-def load_voters(filepath, table, lon_col, lat_col, chunk_size, schema):
+@click.option(
+    "--encoding", default="utf-8-sig",
+    help="CSV encoding. Default utf-8-sig handles BOM in TargetSmart exports.",
+)
+@click.option(
+    "--targetsmart-dtypes/--no-targetsmart-dtypes", default=True,
+    help=(
+        "Pass TARGETSMART_DEFAULT_DTYPES to pandas so ID columns "
+        "(precinct, cd, sd, hd, county, zip) keep leading zeros. "
+        "Disable for non-TargetSmart files. (S2 / #132)"
+    ),
+)
+def load_voters(filepath, table, lon_col, lat_col, chunk_size, schema, encoding, targetsmart_dtypes):
     """Load a voter file CSV into PostGIS.
 
     Examples:
         swh load-voters /data/inputs/TX_voters.csv --table voters_tx
         swh load-voters /data/inputs/VA_voters.csv -t voters_va --chunk-size 100000
+        swh load-voters /data/inputs/non_ts_voters.csv -t voters_x --no-targetsmart-dtypes
     """
-    from swh.voters import load_voter_file
+    from swh.voters import load_voter_file, TARGETSMART_DEFAULT_DTYPES
+
+    dtype = TARGETSMART_DEFAULT_DTYPES if targetsmart_dtypes else None
 
     count = load_voter_file(
         filepath=filepath,
@@ -132,6 +147,8 @@ def load_voters(filepath, table, lon_col, lat_col, chunk_size, schema):
         latitude_col=lat_col,
         chunk_size=chunk_size,
         schema=schema,
+        encoding=encoding,
+        dtype=dtype,
     )
     click.echo(f"Loaded {count:,} voters into '{table}'")
 

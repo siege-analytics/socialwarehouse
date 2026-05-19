@@ -270,6 +270,172 @@ class TestBoundaryAt(TestCase):
         assert rows == [self.abp_mid, self.abp_old]
 
 
+class TestGeoidOn(TestCase):
+    """geoid_on: one-step GEOID string lookup, None-safe."""
+
+    def setUp(self):
+        from socialwarehouse.geo.models import (
+            Address, AddressBoundaryPeriod, CensusVintageConfig,
+        )
+
+        CensusVintageConfig.seed_defaults()
+        vintage = CensusVintageConfig.objects.get(decade=2020)
+        self.addr = Address.objects.create(state_abbreviation="MI")
+
+        AddressBoundaryPeriod.objects.create(
+            address=self.addr,
+            vintage=vintage,
+            state_geoid="26",
+            county_geoid="26163",
+            context_date=date(2023, 1, 1),
+            assignment_method="SPATIAL_JOIN",
+        )
+
+    def test_returns_string_when_present(self):
+        assert self.addr.geoid_on("county", date(2023, 6, 1)) == "26163"
+
+    def test_returns_none_when_type_absent(self):
+        assert self.addr.geoid_on("cd", date(2023, 6, 1)) is None
+
+    def test_returns_none_when_no_row(self):
+        from socialwarehouse.geo.models import Address
+
+        other = Address.objects.create(state_abbreviation="OH")
+        assert other.geoid_on("county", date(2023, 6, 1)) is None
+
+    def test_unknown_boundary_type_raises(self):
+        import pytest
+
+        with pytest.raises(ValueError):
+            self.addr.geoid_on("precinct", date(2023, 6, 1))
+
+
+class TestCurrentGeoid(TestCase):
+    """current_geoid: geoid_on(today) sugar."""
+
+    def test_delegates_to_today(self):
+        from socialwarehouse.geo.models import (
+            Address, AddressBoundaryPeriod, CensusVintageConfig,
+        )
+        from django.utils import timezone
+
+        CensusVintageConfig.seed_defaults()
+        vintage = CensusVintageConfig.objects.get(decade=2020)
+        addr = Address.objects.create(state_abbreviation="WA")
+
+        AddressBoundaryPeriod.objects.create(
+            address=addr,
+            vintage=vintage,
+            state_geoid="53",
+            county_geoid="53033",
+            context_date=timezone.localdate(),
+            assignment_method="SPATIAL_JOIN",
+        )
+
+        assert addr.current_geoid("state") == "53"
+        assert addr.current_geoid("county") == "53033"
+        assert addr.current_geoid("cd") is None
+
+
+class TestBoundaryTimeline(TestCase):
+    """boundary_timeline: chronological list of BoundaryTimelineEntry tuples.
+
+    Plan-bound effective-range derivation requires real siege_utilities
+    RedistrictingPlan rows; this unit suite exercises the NULL-plan
+    path (vintage-derived dates), the orphan-FK path (treated as
+    NULL-plan), and the ordering / shape contract. End-to-end coverage
+    of the plan-bound path lives in integration tests.
+    """
+
+    def setUp(self):
+        from socialwarehouse.geo.models import (
+            Address, AddressBoundaryPeriod, CensusVintageConfig,
+        )
+
+        CensusVintageConfig.seed_defaults()
+        self.vintage_2010 = CensusVintageConfig.objects.get(decade=2010)
+        self.vintage_2020 = CensusVintageConfig.objects.get(decade=2020)
+
+        self.addr = Address.objects.create(state_abbreviation="AL")
+
+        # Two NULL-plan rows on different vintages.
+        self.abp_2010 = AddressBoundaryPeriod.objects.create(
+            address=self.addr,
+            vintage=self.vintage_2010,
+            cd_geoid="0107",
+            context_date=date(2015, 6, 1),
+            assignment_method="SPATIAL_JOIN",
+        )
+        self.abp_2020 = AddressBoundaryPeriod.objects.create(
+            address=self.addr,
+            vintage=self.vintage_2020,
+            cd_geoid="0107",
+            context_date=date(2021, 6, 1),
+            assignment_method="SPATIAL_JOIN",
+        )
+        # Orphan-FK row (plan_id points to a non-existent row).
+        self.abp_orphan = AddressBoundaryPeriod.objects.create(
+            address=self.addr,
+            vintage=self.vintage_2020,
+            redistricting_plan_id=999_999,
+            cd_geoid="0102",
+            context_date=date(2024, 6, 1),
+            assignment_method="PLAN_SPATIAL_JOIN",
+        )
+
+    def test_entries_are_oldest_first(self):
+        timeline = self.addr.boundary_timeline("cd")
+        assert len(timeline) == 3
+        assert timeline[0].abp == self.abp_2010
+        assert timeline[1].abp == self.abp_2020
+        assert timeline[2].abp == self.abp_orphan
+
+    def test_null_plan_range_comes_from_vintage(self):
+        timeline = self.addr.boundary_timeline("cd")
+        entry_2010 = timeline[0]
+        assert entry_2010.effective_from == date(2010, 1, 1)
+        assert entry_2010.effective_to == date(2019, 12, 31)
+        assert entry_2010.plan_name is None
+
+    def test_orphan_fk_treated_as_null_plan(self):
+        timeline = self.addr.boundary_timeline("cd")
+        orphan_entry = timeline[2]
+        assert orphan_entry.effective_from == date(2020, 1, 1)
+        assert orphan_entry.effective_to == date(2029, 12, 31)
+        assert orphan_entry.plan_name is None
+
+    def test_entry_carries_geoid_and_abp(self):
+        timeline = self.addr.boundary_timeline("cd")
+        assert timeline[0].geoid == "0107"
+        assert timeline[2].geoid == "0102"
+        assert timeline[0].abp == self.abp_2010
+
+    def test_entry_namedtuple_unpacks(self):
+        timeline = self.addr.boundary_timeline("cd")
+        geoid, eff_from, eff_to, plan_name, abp = timeline[0]
+        assert geoid == "0107"
+        assert eff_from == date(2010, 1, 1)
+        assert eff_to == date(2019, 12, 31)
+        assert plan_name is None
+        assert abp == self.abp_2010
+
+    def test_unknown_boundary_type_raises(self):
+        import pytest
+
+        with pytest.raises(ValueError):
+            self.addr.boundary_timeline("precinct")
+
+    def test_empty_when_no_rows_of_type(self):
+        # No sldl_geoid populated on any row.
+        assert self.addr.boundary_timeline("sldl") == []
+
+    def test_isolation_between_addresses(self):
+        from socialwarehouse.geo.models import Address
+
+        other = Address.objects.create(state_abbreviation="GA")
+        assert other.boundary_timeline("cd") == []
+
+
 class TestCurrentBoundaries(TestCase):
     """current_boundaries delegates to boundaries_on(today)."""
 

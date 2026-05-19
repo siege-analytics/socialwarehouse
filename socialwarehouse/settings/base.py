@@ -102,6 +102,18 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 100,
+    # A9 / SW#120: all api views require authentication. Default
+    # authentication classes are DRF's built-in Session + Basic; a
+    # token-based scheme can be added later by appending to this list
+    # (e.g. 'rest_framework.authentication.TokenAuthentication' once
+    # rest_framework.authtoken is wired into INSTALLED_APPS + migrated).
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework.authentication.BasicAuthentication",
+    ],
 }
 
 # Celery

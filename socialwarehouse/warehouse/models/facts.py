@@ -21,13 +21,23 @@ from .dimensions import (
 )
 
 
+# Census Bureau coefficient-of-variation reliability thresholds. Drawn
+# from Census's published guidance for ACS estimate reliability: CV < 12%
+# = high reliability, 12-40% = medium, > 40% = low. Hoisted to module
+# scope so the RELIABILITY_CHOICES strings, the compute_reliability
+# implementation, and any downstream analytics that want to mirror these
+# bands share one source of truth. (W4 / SW#108)
+CV_HIGH_THRESHOLD = 12
+CV_MEDIUM_THRESHOLD = 40
+
+
 class FactACSEstimate(models.Model):
     """ACS estimate fact — one row per (geography, variable, survey)."""
 
     RELIABILITY_CHOICES = [
-        ("high", "High (CV < 12%)"),
-        ("medium", "Medium (CV 12-40%)"),
-        ("low", "Low (CV > 40%)"),
+        ("high", f"High (CV < {CV_HIGH_THRESHOLD}%)"),
+        ("medium", f"Medium (CV {CV_HIGH_THRESHOLD}-{CV_MEDIUM_THRESHOLD}%)"),
+        ("low", f"Low (CV > {CV_MEDIUM_THRESHOLD}%)"),
         ("suppressed", "Suppressed by Census Bureau"),
     ]
 
@@ -57,9 +67,9 @@ class FactACSEstimate(models.Model):
         if self.coefficient_of_variation is None:
             return "suppressed"
         cv = abs(self.coefficient_of_variation)
-        if cv < 12:
+        if cv < CV_HIGH_THRESHOLD:
             return "high"
-        if cv < 40:
+        if cv < CV_MEDIUM_THRESHOLD:
             return "medium"
         return "low"
 

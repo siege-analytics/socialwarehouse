@@ -51,8 +51,21 @@ def enrich_addresses_with_boundaries(spark, addresses_table, year=2020, boundari
 
     if addresses_table in TABLES:
         addr_path = TABLES[addresses_table]["path"]
-    else:
+    elif "/" in addresses_table or "://" in addresses_table:
+        # Explicit raw path — has a separator or scheme. Pass through.
         addr_path = addresses_table
+    else:
+        # No separator AND not a registry key — almost certainly a typo'd
+        # registry key (e.g. "silver.address" instead of "silver.addresses").
+        # Pre-D8/SW#130 the value fell through to spark.read.load() which
+        # surfaced as a confusing "path does not exist" deep in the Spark
+        # stack. Fail fast at the API boundary with the available keys.
+        raise ValueError(
+            f"Unknown addresses_table {addresses_table!r}. Must be a key "
+            f"in delta/tables.py:TABLES or a raw Delta path "
+            f"(containing '/' or a scheme like 's3a://'). "
+            f"Known keys: {sorted(TABLES.keys())}. (D8 / SW#130)"
+        )
 
     addresses = (
         spark.read.format("delta").load(addr_path)

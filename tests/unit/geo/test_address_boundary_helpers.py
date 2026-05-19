@@ -96,13 +96,13 @@ class TestBoundaryHistory(TestCase):
             address=self.addr,
             vintage=self.vintage_2020,
             redistricting_plan_id=99,
-            sldl_geoid="01-005",
+            sldl_geoid="01005",
             context_date=date(2024, 6, 1),
             assignment_method="PLAN_SPATIAL_JOIN",
         )
         sldl_history = list(self.addr.boundary_history(boundary_type="sldl"))
         assert len(sldl_history) == 1
-        assert sldl_history[0].sldl_geoid == "01-005"
+        assert sldl_history[0].sldl_geoid == "01005"
 
     def test_unknown_boundary_type_raises(self):
         import pytest

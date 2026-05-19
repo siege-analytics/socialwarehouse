@@ -269,7 +269,15 @@ def load_voter_file(
             with connector.engine.begin() as conn:
                 conn.execute(text(f"DROP TABLE IF EXISTS {schema_q}.{staging_q}"))
         except Exception:
-            logger.warning("Could not clean up staging table %s", staging_table)
+            # Include the SQL the operator should run manually to clean
+            # up the orphan. Without this hint, the only signal an operator
+            # gets is the table name — they have to remember/look up the
+            # schema and the DROP syntax to finish the cleanup. (S8 / SW#138)
+            logger.warning(
+                "Could not clean up staging table %s.%s. "
+                "Run manually: DROP TABLE IF EXISTS %s.%s;",
+                schema, staging_table, schema, staging_table,
+            )
         raise
 
     return total_rows

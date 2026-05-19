@@ -136,7 +136,7 @@ def load_voter_file(
         Loaded 15234567 voters
     """
     from siege_utilities.geo.spatial_transformations import PostGISConnector
-    from sqlalchemy import text
+    from sqlalchemy import inspect as sa_inspect, text
 
     filepath = Path(filepath)
     conn_str = connection_string or settings.database.connection_string
@@ -163,8 +163,17 @@ def load_voter_file(
             first_chunk = False
             logger.info("Loaded chunk: %d rows (total: %d)", len(gdf), total_rows)
 
-        # Atomic swap: drop target, rename staging -> target
+        # Atomic swap: drop target, rename staging -> target.
+        # Acquire ACCESS EXCLUSIVE lock on the target table BEFORE the DROP
+        # so concurrent readers complete or block here (cleaner than relying
+        # on implicit DDL-acquired locks). LOCK requires the table to exist;
+        # the inspect.has_table pre-check guards first-ever loads where no
+        # target exists yet. (S3 / SW#133)
+        inspector = sa_inspect(connector.engine)
+        target_exists = inspector.has_table(table_name, schema=schema)
         with connector.engine.begin() as conn:
+            if target_exists:
+                conn.execute(text(f"LOCK TABLE {schema}.{table_name} IN ACCESS EXCLUSIVE MODE"))
             conn.execute(text(f"DROP TABLE IF EXISTS {schema}.{table_name}"))
             conn.execute(text(f"ALTER TABLE {schema}.{staging_table} RENAME TO {table_name}"))
 

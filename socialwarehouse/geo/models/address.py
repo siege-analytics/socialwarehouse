@@ -281,6 +281,116 @@ class Address(models.Model):
 
         return self
 
+    # F11 / SW#100 step-2 helpers: temporal boundary history.
+    #
+    # The Address-level GEOID fields (cd_geoid, sldl_geoid, ...) are a
+    # cache of the *current* boundary assignment. The authoritative
+    # source for "which boundaries did this address belong to on date X"
+    # and "every boundary this address has ever been in" is the
+    # AddressBoundaryPeriod table, accessed through these helpers.
+    #
+    # Until the step-2b signal lands, the cache may drift from the
+    # helper's answer when ABP is written without updating Address. Use
+    # the cache for hot-path filters; use the helpers when correctness
+    # against the temporal record matters.
+    _BOUNDARY_TYPES = (
+        "state", "county", "tract", "block_group", "block",
+        "vtd", "cd", "sldl", "sldu",
+    )
+
+    def boundary_history(self, boundary_type=None):
+        """Every recorded boundary assignment for this address.
+
+        ``boundary_type``, if given, filters to ABP rows that carry a
+        non-empty geoid for that type. Valid values: ``state``,
+        ``county``, ``tract``, ``block_group``, ``block``, ``vtd``,
+        ``cd``, ``sldl``, ``sldu``.
+
+        Returns a queryset of :class:`AddressBoundaryPeriod` ordered
+        most-recent-first by ``context_date`` then ``assigned_at``.
+        Includes the linked ``vintage`` and ``redistricting_plan`` via
+        ``select_related`` so callers can read the plan / vintage
+        metadata without N+1 lookups.
+        """
+        qs = self.boundary_periods.select_related("vintage", "redistricting_plan")
+        if boundary_type:
+            if boundary_type not in self._BOUNDARY_TYPES:
+                raise ValueError(
+                    f"Unknown boundary_type {boundary_type!r}; "
+                    f"expected one of {self._BOUNDARY_TYPES}"
+                )
+            field = f"{boundary_type}_geoid"
+            qs = qs.exclude(**{f"{field}__isnull": True}).exclude(**{field: ""})
+        return qs.order_by("-context_date", "-assigned_at")
+
+    def boundaries_on(self, on_date):
+        """Boundaries this address was in on ``on_date``.
+
+        Resolves the active redistricting plan(s) for ``on_date`` and
+        returns one ABP row per boundary type whose plan was active on
+        that date. Boundary types not covered by any plan-bound row fall
+        back to the NULL-plan (Census default) row when one exists for
+        the vintage covering ``on_date``.
+
+        Returns a dict ``{boundary_type: AddressBoundaryPeriod}``.
+        Missing keys mean no ABP row covers ``on_date`` for that type.
+        """
+        from socialwarehouse.geo.models import CensusVintageConfig
+
+        vintage = CensusVintageConfig.for_year(on_date.year)
+        if not vintage:
+            return {}
+
+        periods = list(
+            self.boundary_periods
+            .filter(vintage=vintage)
+            .select_related("redistricting_plan")
+        )
+
+        result = {}
+        for btype in self._BOUNDARY_TYPES:
+            field = f"{btype}_geoid"
+            active = next(
+                (
+                    p for p in periods
+                    if p.redistricting_plan
+                    and p.redistricting_plan.effective_from <= on_date
+                    and (
+                        p.redistricting_plan.effective_to is None
+                        or p.redistricting_plan.effective_to >= on_date
+                    )
+                    and getattr(p, field, None)
+                ),
+                None,
+            )
+            if active:
+                result[btype] = active
+                continue
+            default = next(
+                (
+                    p for p in periods
+                    if p.redistricting_plan_id is None
+                    and getattr(p, field, None)
+                ),
+                None,
+            )
+            if default:
+                result[btype] = default
+
+        return result
+
+    def current_boundaries(self):
+        """Sugar for :meth:`boundaries_on(today)`.
+
+        Once the F11 step-2b signal-driven cache refresh is in place,
+        ``current_boundaries()[btype].{btype}_geoid`` returns the same
+        value as ``self.{btype}_geoid`` for every type. Until then, the
+        helper is authoritative and the cache may lag.
+        """
+        from django.utils import timezone
+
+        return self.boundaries_on(timezone.localdate())
+
 
 # Backwards-compatible alias
 United_States_Address = Address

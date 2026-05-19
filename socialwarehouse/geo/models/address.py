@@ -12,6 +12,8 @@ Design:
     rich queries.
 """
 
+from collections import namedtuple
+
 from django.contrib.gis.db import models
 from django.utils import timezone
 
@@ -45,6 +47,17 @@ GEOCODE_SOURCE_CHOICES = [
     ("google", "Google Geocoding API"),
     ("smartystreets", "SmartyStreets"),
 ]
+
+
+# F11 / SW#100: one entry in an address's temporal-boundary timeline.
+# Returned by Address.boundary_timeline(). Named-tuple so callers can
+# unpack positionally or dot-access; `abp` carries the raw
+# AddressBoundaryPeriod row for fields beyond the four headline ones
+# (assignment_method, congressional_term, plan_district_*, ...).
+BoundaryTimelineEntry = namedtuple(
+    "BoundaryTimelineEntry",
+    ["geoid", "effective_from", "effective_to", "plan_name", "abp"],
+)
 
 
 class Address(models.Model):
@@ -311,6 +324,17 @@ class Address(models.Model):
         Includes the linked ``vintage`` and ``redistricting_plan`` via
         ``select_related`` so callers can read the plan / vintage
         metadata without N+1 lookups.
+
+        Notes:
+          - Unfiltered (``boundary_type=None``) returns rows with
+            sparse geoid fills: plan-bound CD rows have null sldl /
+            sldu, plan-bound SLDL rows have null cd, etc. Each row
+            carries the geoids for the boundary types its plan covers.
+            Filter by ``boundary_type`` for the all-rows-have-this-geoid
+            shape.
+          - Rows with NULL ``context_date`` sort last under DESC
+            (Postgres default for NULLS LAST). For most-recent-first
+            timelines this is the expected behavior.
         """
         qs = self.boundary_periods.select_related("vintage", "redistricting_plan")
         if boundary_type:
@@ -386,6 +410,12 @@ class Address(models.Model):
         ``current_boundaries()[btype].{btype}_geoid`` returns the same
         value as ``self.{btype}_geoid`` for every type. Until then, the
         helper is authoritative and the cache may lag.
+
+        "Today" is ``django.utils.timezone.localdate()`` — the date
+        in the active timezone (or settings.TIME_ZONE). At midnight
+        boundaries, two callers in different timezones may see
+        different answers for an address whose temporal record changes
+        on that day.
         """
         from django.utils import timezone
 
@@ -428,6 +458,115 @@ class Address(models.Model):
             raise ValueError(f"position must be non-negative, got {position}")
         qs = self.boundary_history(boundary_type=boundary_type)
         return qs[position:position + 1].first()
+
+    def boundary_timeline(self, boundary_type):
+        """Chronological timeline of one boundary type for this address.
+
+        Returns a list of :class:`BoundaryTimelineEntry` namedtuples
+        sorted oldest-first. Each entry exposes:
+
+          - ``geoid`` — the boundary GEOID for that period.
+          - ``effective_from`` — :class:`datetime.date` the period began.
+          - ``effective_to`` — :class:`datetime.date` it ended, or
+            ``None`` for "still active."
+          - ``plan_name`` — the redistricting plan name that established
+            the assignment, or ``None`` for the Census-default (no plan).
+          - ``abp`` — the raw :class:`AddressBoundaryPeriod` row, for
+            callers wanting fields beyond the four headline ones
+            (``assignment_method``, ``congressional_term``,
+            ``plan_district_*``, etc.).
+
+        Effective ranges:
+          - Plan-bound rows: ``redistricting_plan.effective_from`` and
+            ``.effective_to``. ``effective_to`` may be ``None`` meaning
+            "currently active."
+          - NULL-plan rows (Census defaults): the linked vintage's
+            ``effective_start`` and ``effective_end`` years, converted
+            to ``date(year, 1, 1)`` and ``date(year, 12, 31)``.
+
+        Adjacent same-geoid rows are NOT collapsed. Callers wanting
+        collapse-by-geoid can use :func:`itertools.groupby` on the
+        result — collapse semantics are opinionated (across vintage
+        boundaries? plan-name-aware?) and forcing them here would
+        mis-shape the layered API.
+
+        Rows whose ``redistricting_plan_id`` points at a non-existent
+        plan (the FK is ``db_constraint=False``, so orphans are
+        possible) are treated as NULL-plan; the entry's ``plan_name``
+        is ``None`` and the effective range falls back to the vintage.
+        """
+        from datetime import date
+
+        if boundary_type not in self._BOUNDARY_TYPES:
+            raise ValueError(
+                f"Unknown boundary_type {boundary_type!r}; "
+                f"expected one of {self._BOUNDARY_TYPES}"
+            )
+
+        rows = list(self.boundary_history(boundary_type=boundary_type))
+        entries = []
+        field = f"{boundary_type}_geoid"
+
+        for abp in rows:
+            geoid = getattr(abp, field, None)
+            if not geoid:
+                continue
+
+            plan = None
+            if abp.redistricting_plan_id is not None:
+                try:
+                    plan = abp.redistricting_plan
+                except Exception:
+                    plan = None
+
+            if plan is not None:
+                eff_from = getattr(plan, "effective_from", None)
+                eff_to = getattr(plan, "effective_to", None)
+                plan_name = getattr(plan, "plan_name", None) or str(plan)
+            else:
+                vintage = abp.vintage
+                eff_from = date(vintage.effective_start, 1, 1)
+                eff_to = date(vintage.effective_end, 12, 31)
+                plan_name = None
+
+            entries.append(BoundaryTimelineEntry(
+                geoid=geoid,
+                effective_from=eff_from,
+                effective_to=eff_to,
+                plan_name=plan_name,
+                abp=abp,
+            ))
+
+        return sorted(
+            entries,
+            key=lambda e: e.effective_from or date.min,
+        )
+
+    def geoid_on(self, boundary_type, on_date):
+        """The GEOID string for one boundary type as of ``on_date``, or None.
+
+        Sugar for ``self.boundary_on(boundary_type, on_date).{boundary_type}_geoid``
+        with None-safety: returns ``None`` if no ABP row covers
+        ``on_date`` for that type, rather than raising AttributeError.
+        """
+        row = self.boundary_on(boundary_type, on_date)
+        if row is None:
+            return None
+        return getattr(row, f"{boundary_type}_geoid", None) or None
+
+    def current_geoid(self, boundary_type):
+        """The GEOID string for one boundary type as of today, or None.
+
+        Sugar for :meth:`geoid_on(boundary_type, today)`. With the
+        F11 step-2b signal-driven cache refresh in place, returns the
+        same value as ``self.{boundary_type}_geoid`` directly.
+
+        "Today" is ``django.utils.timezone.localdate()``; see the note
+        on :meth:`current_boundaries` for the midnight-boundary caveat.
+        """
+        from django.utils import timezone
+
+        return self.geoid_on(boundary_type, timezone.localdate())
 
 
 # Backwards-compatible alias

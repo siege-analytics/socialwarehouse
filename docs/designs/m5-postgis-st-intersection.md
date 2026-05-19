@@ -1,6 +1,19 @@
 # M5 / SW#149 — PostGIS-side ST_Intersection rewrite (design)
 
-**Status**: Design. No code in this PR. Awaiting maintainer sign-off before the implementation PR opens.
+**Status**: Design v3. No code in this PR. Q1 (area-units) and the projection-coverage sub-question are now answered (see "Resolved decisions" below); ready for the option A implementation PR.
+
+## Resolved decisions (v3, 2026-05-19)
+
+- **Q1 (area-units): fix the degree-squared bug.** The current Python `geom.area` returns degree-squared in 4269/4326, which is not a meaningful planar area on a curved earth. The replacement projects to a metric CRS before measuring area. The percentages downstream consumers see today are wrong, not load-bearing — this is a data correction, not a preserved behavior.
+- **Projection coverage: per-region branching now (option ii), global equal-area eventually (option iii).** Implementation picks the projected CRS by state-FIPS prefix:
+  - CONUS (state FIPS NOT IN 02, 15, 60, 66, 69, 72, 78): **EPSG:5070** (NAD83 / Conus Albers Equal Area)
+  - Alaska (02): **EPSG:3338** (NAD83 / Alaska Albers)
+  - Hawaii (15): **EPSG:3563** (NAD83(HARN) / Hawaii Albers Equal Area) — or EPSG:6933 fallback if 3563 unavailable in the local PostGIS spatial_ref_sys
+  - Puerto Rico (72) and US Virgin Islands (78): **EPSG:32161** (NAD83 / Puerto Rico & Virgin Is.)
+  - American Samoa (60), Guam (66), Northern Mariana (69): **EPSG:6933** (NSIDC EASE-Grid 2.0 global equal-area) as the practical fallback — no single regional equal-area projection covers these well
+  - End state (future ticket): **EPSG:6933 everywhere**, dropping the per-region branching. Filed as a follow-up so the per-region table doesn't become permanent.
+
+The implementation PR derives the SRID from `state_fips = LEFT(county.geoid, 2)` inside a Python helper, then passes the chosen SRID into the GeoDjango `Transform(...)` call per-county. No SQL-side CASE-on-state needed; the Python branching is cheap and stays explicit.
 
 ## Problem
 
@@ -243,3 +256,4 @@ This is the design-PR-first scenario the `think` gate exists for. The Option-A-f
 
 - v1 (initial): proposed option B (raw SQL INSERT...SELECT) directly. Missed the middle ground.
 - v2 (after operator pushback "If we are dealing with GeoDjango with its massive ORM, why are we manually computing intersections?"): added option A (GeoDjango ORM annotations) as the recommended starting point. Option B reserved for "if A isn't fast enough." Footguns reframed as option-B-specific. Q1 (area-units) elevated as the gating decision before any implementation begins.
+- v3 (2026-05-19, after maintainer answered Q1 + projection sub-question): Q1 answered "fix the degree-squared bug" — area measured in projected metric CRS. Projection coverage answered "per-region branching now (ii), global equal-area eventually (iii)". CRS choice table added to "Resolved decisions". Follow-up ticket noted for the eventual EPSG:6933-everywhere end state. This unblocks the option A implementation PR.

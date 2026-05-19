@@ -9,6 +9,14 @@ runs before any Spark API is touched.
 
 from unittest.mock import MagicMock
 
+import pytest
+
+# delta/tables.py imports pyspark at module load; CI without pyspark
+# would otherwise fail at test collection. The D8 validator behavior
+# itself doesn't need a real Spark — but the TABLES registry import
+# chain does. Skip cleanly when pyspark is absent.
+pytest.importorskip("pyspark")
+
 from django.test import SimpleTestCase
 
 from socialwarehouse.delta import enrichment as _enr

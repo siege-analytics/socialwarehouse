@@ -15,6 +15,7 @@
 | DemographicSnapshot | Django model | siege_utilities.geo.django.models.demographics | docs/entities/demographic_snapshot.md |
 | api/geo views decorators | DRF decorator surface | socialwarehouse.api.geo.views | docs/entities/api_geo_views_decorators.md |
 | delta/enrichment.py | Spark module | socialwarehouse.delta.enrichment | docs/entities/delta_enrichment.md |
+| delta/config.py | Spark config module | socialwarehouse.delta.config | docs/entities/delta_config.md |
 | settings | Django settings module | socialwarehouse.settings | docs/entities/settings.md |
 
 Seed coverage chosen for E1 hostile-review frequency. Catalog grows on next touch — every `NO-DOC` outcome in survey artifacts is a candidate.

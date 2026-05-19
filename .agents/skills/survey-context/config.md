@@ -18,6 +18,7 @@
 | delta/config.py | Spark config module | socialwarehouse.delta.config | docs/entities/delta_config.md |
 | settings | Django settings module | socialwarehouse.settings | docs/entities/settings.md |
 | swh/voters.py | Python module | swh.voters | docs/entities/swh_voters.md |
+| swh/census.py | Python module | swh.census | docs/entities/swh_census.md |
 
 Seed coverage chosen for E1 hostile-review frequency. Catalog grows on next touch — every `NO-DOC` outcome in survey artifacts is a candidate.
 

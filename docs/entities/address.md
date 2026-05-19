@@ -36,8 +36,12 @@
 
 ### Methods of interest
 
-- `assign_census_units_from_fips(state_fips, county_fips, tract, block)` — constructs hierarchical GEOIDs from Census Geocoder FIPS output. Mutates instance fields; caller must `.save()`.
-- `populate_foreign_keys()` — populates siege_geo FK refs from GEOIDs.
+- `assign_census_units_from_fips(state_fips, county_fips, tract, block)` — constructs hierarchical GEOIDs from Census Geocoder FIPS output. Mutates instance fields; **caller must `.save()`**.
+- `populate_foreign_keys()` — populates siege_geo FK refs from GEOIDs. Post-F4/F5 (SW#93+#94): mutates instance fields and returns `self`; **caller must `.save()`** (matches `assign_census_units_from_fips`). Pre-fix it called `self.save()` internally — asymmetric with the other instance-mutating method and a hidden per-call write that was suboptimal in bulk-update flows.
+
+### Module constants
+
+- `DEFAULT_CENSUS_YEAR = 2020` — single edit site for the model's `census_year` field default. Bumped manually each decade. Path-of-least-resistance fix for F6 (SW#95) — a `CensusVintageConfig`-driven callable default tangles with F11 (SW#100, still open) and is deferred until that question is settled.
 
 ## Callers / consumers
 
@@ -54,7 +58,7 @@
 ## Known assumptions / gotchas
 
 - **`null=True` on CharField throughout** is a Django-convention violation (F3 / SW#92): Django convention is `blank=True, default=""`, not `null=True`. The model uses the latter everywhere. Means `filter(field="")` and `filter(field__isnull=True)` return different sets; callers must know which case the data is in.
-- **`geocoded=True` does NOT imply `geom` is set.** M6 / SW#150: matched-without-coords sets `geocoded=True` with `geom=NULL`. Filter `geocoded=True AND geom__isnull=False` if you need both.
+- **`geocoded=True` implies `geom IS NOT NULL`** (post-M6/SW#150 fix). Pre-fix Census's `matched=True` flipped `geocoded=True` even when lat/lon were unpopulated, leaving `geom=NULL`; post-fix Phase 1 requires both coords before setting `geocoded=True` and demotes matched-without-coords to the unmatched bucket for Phase 2 (Nominatim) to retry. Downstream filters on `geocoded=True` alone are now safe.
 - **`geocode_source` values are free-form strings** (not a choices field). Known values: "census", "nominatim". Add a CHOICES list if a third source appears.
 - **Per-row `.save()` in geocode loop** was the M2 bottleneck (SW#146). FIXED: `geocode_addresses.py` now uses `Address.objects.bulk_update(pending, ADDRESS_BULK_UPDATE_FIELDS, batch_size=500)`. Future bulk-update callers should mirror this pattern: maintain a `pending_updates` list, flush per chunk, name the field list explicitly so only intended fields are written.
 - **`qs.count()` followed by `.iterator()` re-executes the SELECT.** Was M1 (SW#145), fixed. Don't reintroduce a pre-iteration count in the same flow; for advisory counts use the dry-run code path only.
@@ -64,3 +68,7 @@
 
 - 2026-05-18: Seeded from live model. F3/M2/M6 surfaced in E1 review (SW#92, #146, #150).
 - 2026-05-18: M1+M2+M3 bundled fix shipped — `geocode_addresses.py` rewritten to stream addresses via `qs.iterator(chunk_size=batch_size)`, accumulate per-chunk updates, flush via `Address.objects.bulk_update`. ADDRESS_BULK_UPDATE_FIELDS constant + `_yield_chunks` generator added. Callers wanting the same pattern can reference geocode_addresses.py:handle().
+- 2026-05-19: M6 / SW#150 — Phase 1 now requires `matched AND lat AND lon` before flipping `geocoded=True`; matched-without-coords demoted to Phase 2 (Nominatim) for a real try. The `geocoded=True implies geom IS NOT NULL` invariant downstream code relies on is now load-bearing.
+- 2026-05-19: F4 + F5 / SW#93 + #94 — `populate_foreign_keys()` no longer silently saves. It mutates the instance and returns `self`; caller is responsible for `.save()` (matches `assign_census_units_from_fips`). Updated the only caller (`assign_boundaries.py`) to call `populate_foreign_keys()` BEFORE its existing `.save()` so the geoid changes and the FK assignments share a single UPDATE.
+- 2026-05-19: F6 / SW#95 — Hoisted `census_year` default to module constant `DEFAULT_CENSUS_YEAR = 2020`. Single edit site for the manual-per-decade bump. Callable default (reading `CensusVintageConfig`) deferred until F11 / SW#100 is settled.
+- 2026-05-19: F9 / SW#98 — `assign_boundaries.py` method-local-imports pattern documented at module top: Django AppRegistryNotReady avoidance (management commands import before app loader is ready), GST submodule cost-of-import for unrelated commands, and conditional plan-aware code paths.

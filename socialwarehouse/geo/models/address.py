@@ -16,6 +16,19 @@ from django.contrib.gis.db import models
 from django.utils import timezone
 
 
+# Default census vintage used when an Address is created without an
+# explicit `census_year`. Bumped manually each decade as the canonical
+# TIGER vintage shifts (next bump: 2030 vintage's general-availability
+# date — TBD, currently expected ~2030-2032).
+#
+# This is INTENTIONALLY a module-level int constant, not a callable
+# default reading CensusVintageConfig — that path tangles with F11
+# (#100 — Address.census_year vs CensusVintageConfig dual source of
+# truth) and is being deferred until the dual-source-of-truth question
+# is settled. Tracked: F6 / SW#95.
+DEFAULT_CENSUS_YEAR = 2020
+
+
 class Address(models.Model):
     """
     A geocoded US address with Census boundary assignments.
@@ -70,8 +83,10 @@ class Address(models.Model):
     geocoded_at = models.DateTimeField(null=True, blank=True)
 
     # ── Census year context ──────────────────────────────────────────────
+    # Default sourced from DEFAULT_CENSUS_YEAR module constant so the
+    # "bumped manually each decade" rule has a single edit site.
     census_year = models.IntegerField(
-        default=2020,
+        default=DEFAULT_CENSUS_YEAR,
         help_text="Census year for boundary assignment (2010, 2020)",
     )
 
@@ -193,7 +208,18 @@ class Address(models.Model):
         Populate siege_geo FK references from GEOIDs.
 
         Call after census unit assignment to enable rich hierarchical queries
-        like address.siege_vtd.county.state.name.
+        like ``address.siege_vtd.county.state.name``.
+
+        **Does not persist.** This method mutates the instance in memory and
+        returns ``self``; the caller is responsible for calling ``.save()``
+        (or batching via ``bulk_update``) when ready. This matches the
+        :meth:`assign_census_units_from_fips` convention and the broader
+        Django ORM convention that instance-mutating methods do not save.
+        (F4 + F5 / SW#93 + SW#94 — pre-fix this method called ``self.save()``
+        as a hidden side effect; ``assign_census_units_from_fips`` did not.
+        The asymmetry surprised callers and the bulk-update integration was
+        suboptimal because every populated address triggered an individual
+        UPDATE.)
         """
         from siege_utilities.geo.django.models import (
             State, County, Tract, BlockGroup,
@@ -220,8 +246,7 @@ class Address(models.Model):
                 ).first()
                 setattr(self, fk_field, obj)
 
-        self.save()
-        return True
+        return self
 
 
 # Backwards-compatible alias

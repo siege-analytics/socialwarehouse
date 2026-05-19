@@ -34,7 +34,7 @@ if _GST_APP_DIR.is_dir() and str(_GST_APP_DIR) not in sys.path:
 # running with the insecure default below.
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "insecure-dev-key-change-in-production")
 DEBUG = False
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = []  # base intentionally has no hosts; environment overrides (development = ["*"], production = bracket-subscript env-var-required per ST1/ST2) (ST5 / SW#143)
 
 INSTALLED_APPS = [
     # grappelli must precede django.contrib.admin (Grappelli requirement)
@@ -54,7 +54,7 @@ INSTALLED_APPS = [
     # socialwarehouse apps
     "socialwarehouse.geo",
     "socialwarehouse.warehouse",
-    # GST apps (via vendor/geodjango_simple_template/ submodule, P1B-B #68)
+    # GST apps from vendor submodule (bare name; sys.path wired above).
     "locations",
 ]
 

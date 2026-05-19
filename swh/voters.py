@@ -223,6 +223,17 @@ def load_voter_file(
 
     total_rows = 0
     first_chunk = True
+    # Column-shape of the first non-empty chunk. After SU#517 (PostGISConnector
+    # uses gpd.GeoDataFrame.to_postgis) columns are written by NAME against
+    # the staging table's schema — a chunk with a different column set
+    # would either raise (extra columns) or NaN-fill (missing columns) per
+    # pandas to_sql semantics. We pre-check ourselves and refuse to upload
+    # a chunk with drifted columns so the misalignment never reaches the
+    # database. Pre-S4-aware behavior would have silently appended whatever
+    # geom was present and dropped tabular columns; SU#517 closed the column-
+    # loss vector, and this check closes the chunk-drift one above it.
+    # (S4 / SW#134; depends on SU#517 having merged.)
+    first_chunk_columns: list[str] | None = None
 
     try:
         for chunk in pd.read_csv(
@@ -237,6 +248,26 @@ def load_voter_file(
 
             if len(gdf) == 0:
                 continue
+
+            if first_chunk_columns is None:
+                first_chunk_columns = list(gdf.columns)
+            else:
+                current_columns = list(gdf.columns)
+                if current_columns != first_chunk_columns:
+                    added = set(current_columns) - set(first_chunk_columns)
+                    removed = set(first_chunk_columns) - set(current_columns)
+                    raise ValueError(
+                        f"Chunk column-shape drift detected mid-file at row "
+                        f"~{total_rows + 1}: "
+                        f"added={sorted(added) or '∅'}, "
+                        f"removed={sorted(removed) or '∅'}. "
+                        f"Pre-SU#517 this drift was masked by the geom-only "
+                        f"write path; post-SU#517 columns are written by name "
+                        f"and would either raise or NaN-fill silently. "
+                        f"Staging table will be cleaned up by the exception "
+                        f"handler. Fix the source CSV (consistent header) "
+                        f"or split the load. (S4 / SW#134)"
+                    )
 
             # Upload: replace on first chunk, append thereafter
             if_exists = "replace" if first_chunk else "append"

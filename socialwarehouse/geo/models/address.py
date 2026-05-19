@@ -29,6 +29,24 @@ from django.utils import timezone
 DEFAULT_CENSUS_YEAR = 2020
 
 
+# Canonical geocode source values, lowercase. Matches how SW's own
+# writers populate the field (see geocode_addresses.py: `addr.geocode_source
+# = "census"` / "nominatim"). The vendor GST submodule's tasks.py writes
+# Mixed Case ("Census") — that's a separate inconsistency to be cleaned up
+# vendor-side; out of scope for F7/SW#96.
+#
+# Reading rows with values outside this set (legacy, vendor-written, or
+# any future addition) is not blocked — only future admin-form writes are
+# constrained. Add a new value here when a new geocoder ships and update
+# the canonical-set comment.
+GEOCODE_SOURCE_CHOICES = [
+    ("census", "Census Geocoder (US)"),
+    ("nominatim", "Nominatim (OpenStreetMap)"),
+    ("google", "Google Geocoding API"),
+    ("smartystreets", "SmartyStreets"),
+]
+
+
 class Address(models.Model):
     """
     A geocoded US address with Census boundary assignments.
@@ -78,7 +96,13 @@ class Address(models.Model):
     )
     geocode_source = models.CharField(
         max_length=50, null=True, blank=True,
-        help_text="Source: Census, Google, Nominatim, SmartyStreets",
+        choices=GEOCODE_SOURCE_CHOICES,
+        help_text=(
+            "Source geocoder. Canonical values lowercase per "
+            "GEOCODE_SOURCE_CHOICES (F7 / SW#96). Existing rows with "
+            "non-canonical values (e.g. vendor-written 'Census') are "
+            "preserved; only new admin-form writes are constrained."
+        ),
     )
     geocoded_at = models.DateTimeField(null=True, blank=True)
 

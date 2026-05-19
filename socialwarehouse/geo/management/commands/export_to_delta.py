@@ -40,7 +40,22 @@ class Command(BaseCommand):
         if options["dry_run"]:
             from socialwarehouse.delta.enrichment import estimate_scale
             engine, reason = estimate_scale(total)
+            # Advisory: this command unconditionally uses Spark on the
+            # real run (load_postgis_addresses_to_delta is the only
+            # implementation). The recommendation is informational —
+            # at small scales the PostGIS-direct path is faster, but
+            # this command does not implement it. If the recommendation
+            # is "postgis," consider whether the export is necessary at
+            # all (PostGIS already holds the data) or whether to skip
+            # the Spark hop for this scale. (M7 / SW#151)
             self.stdout.write(f"Recommended engine: {engine} ({reason})")
+            if engine == "postgis":
+                self.stdout.write(
+                    "  Note: this command always uses Spark on the real run; "
+                    "the 'postgis' recommendation suggests an alternative path "
+                    "(direct PostGIS query or skipping the export) that lives "
+                    "outside this command."
+                )
             self.stdout.write(self.style.SUCCESS("[DRY RUN] No export performed."))
             return
 

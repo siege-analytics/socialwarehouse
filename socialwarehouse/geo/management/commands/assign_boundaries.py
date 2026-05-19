@@ -27,6 +27,32 @@ from django.utils import timezone
 logger = logging.getLogger("socialwarehouse.geo")
 
 
+# Import-discipline note (F9 / SW#98):
+#
+# Heavy domain imports (Address, AddressBoundaryPeriod, CensusVintageConfig,
+# siege_utilities.geo.django.models.*, RedistrictingPlan, etc.) live INSIDE
+# the methods that use them, not at module top. Reasons, in order:
+#
+# 1. Django management commands are imported by manage.py at startup to
+#    discover subcommands. Top-level imports of socialwarehouse.geo.models
+#    would trigger Django's model registration BEFORE Django's app loader
+#    is ready, producing AppRegistryNotReady. Method-local imports defer
+#    until handle() runs (which is post-setup).
+#
+# 2. The siege_utilities boundary models live in a vendor submodule
+#    (vendor/geodjango_simple_template). Top-level imports here pull the
+#    submodule into the import graph of every `python manage.py` invocation,
+#    inflating startup cost for unrelated commands.
+#
+# 3. Some sites (RedistrictingPlan, plan-aware lookups) are conditional —
+#    only the plan-aware code path needs them. Method-local imports keep
+#    the legacy-mode code path independent of the plan-aware dependencies.
+#
+# If you need to add a top-level import, verify the symbol isn't a Django
+# model registered after Django setup, and that adding it doesn't pull in
+# the GST submodule for non-GST-using commands.
+
+
 class Command(BaseCommand):
     help = (
         "Assign census geographic boundaries to geocoded addresses. "
@@ -339,6 +365,14 @@ class Command(BaseCommand):
                     addr.sldu_geoid = sldu_geoid
                     addr.census_year = year
                     addr.census_units_assigned_at = timezone.now()
+
+                    # Populate FKs in memory BEFORE the save so the geoid
+                    # changes and the FK assignments share a single UPDATE.
+                    # Post-F4/F5 (SW#93+#94) populate_foreign_keys() no
+                    # longer saves; callers are responsible for persistence.
+                    if populate_fks:
+                        addr.populate_foreign_keys()
+
                     addr.save()
 
                     # --- Create/update AddressBoundaryPeriod ---
@@ -364,9 +398,6 @@ class Command(BaseCommand):
                                 "assignment_method": method,
                             },
                         )
-
-                    if populate_fks:
-                        addr.populate_foreign_keys()
 
                     assigned += 1
 

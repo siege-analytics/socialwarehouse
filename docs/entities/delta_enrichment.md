@@ -18,7 +18,7 @@ Spark + Sedona enrichment surface for warehouse-scale geographic operations. Two
 
 **Inputs:**
 - `spark` — `SparkSession` with Sedona registered (caller responsible; failure to register surfaces as `AnalysisException: Undefined function: ST_Contains`).
-- `addresses_table` — either a key from `delta/tables.py:TABLES` (resolved via the registry) OR a raw Delta path. Brittle to typos — invalid registry-shaped strings fall through to raw-path interpretation (D8 finding).
+- `addresses_table` — either a key from `delta/tables.py:TABLES` (resolved via the registry) OR a raw Delta path (containing `/` or a scheme like `s3a://`). Post-D8/SW#130: anything else (no `/`, no scheme, not a registry key) raises `ValueError` at the function boundary naming the known keys. Pre-fix typos fell through to `spark.read.load()` and surfaced as confusing "path does not exist" errors deep in the Spark stack.
 - `year` — Census vintage year. Used to filter boundaries before joins. Defaults to 2020.
 - `boundaries_path` — optional Delta path for boundaries. Defaults to `get_table_path("silver", "boundaries")`.
 
@@ -60,3 +60,4 @@ JDBC read from `POSTGRES_HOST` / `POSTGRES_PORT` / `POSTGRES_DB` env vars; write
 ## Survey log
 
 - 2026-05-18: Seeded via survey-context NO-DOC path during D1+D2+D3 bundled fix (PR pending). Documents the post-fix function contract; pre-fix gotchas captured in Known gotchas section above.
+- 2026-05-19: D8 / SW#130 fix — `addresses_table` resolution now distinguishes "raw path" (has `/` or scheme) from "typo'd registry key" (neither). Typos raise `ValueError` at the function boundary listing the available keys. Pre-fix Spark surfaced a confusing path-not-found mid-job.

@@ -16,6 +16,7 @@
 | api/geo views decorators | DRF decorator surface | socialwarehouse.api.geo.views | docs/entities/api_geo_views_decorators.md |
 | delta/enrichment.py | Spark module | socialwarehouse.delta.enrichment | docs/entities/delta_enrichment.md |
 | settings | Django settings module | socialwarehouse.settings | docs/entities/settings.md |
+| swh/voters.py | Python module | swh.voters | docs/entities/swh_voters.md |
 
 Seed coverage chosen for E1 hostile-review frequency. Catalog grows on next touch — every `NO-DOC` outcome in survey artifacts is a candidate.
 

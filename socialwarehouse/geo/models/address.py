@@ -60,6 +60,34 @@ BoundaryTimelineEntry = namedtuple(
 )
 
 
+def _safe_plan_name(plan_id):
+    """Return a RedistrictingPlan's plan_name without triggering the SU#527 columns.
+
+    Calling ``abp.redistricting_plan`` triggers a SELECT that includes
+    ``effective_from`` / ``effective_to``, columns the siege_utilities
+    migrations don't create (SU#527). Using
+    ``RedistrictingPlan.objects.filter(...).values_list("plan_name", flat=True)``
+    restricts the SELECT to only the columns we need, dodging the
+    missing-column crash.
+
+    Returns ``None`` for null ``plan_id``, for orphan FKs (non-existent
+    plan), or if any error occurs during the lookup.
+    """
+    if plan_id is None:
+        return None
+    try:
+        from siege_utilities.geo.django.models import RedistrictingPlan
+
+        return (
+            RedistrictingPlan.objects
+            .filter(pk=plan_id)
+            .values_list("plan_name", flat=True)
+            .first()
+        )
+    except Exception:
+        return None
+
+
 class Address(models.Model):
     """
     A geocoded US address with Census boundary assignments.
@@ -336,7 +364,12 @@ class Address(models.Model):
             (Postgres default for NULLS LAST). For most-recent-first
             timelines this is the expected behavior.
         """
-        qs = self.boundary_periods.select_related("vintage", "redistricting_plan")
+        # NOTE: select_related on `redistricting_plan` triggers a SELECT
+        # that includes `effective_from` / `effective_to` columns the
+        # current siege_utilities migrations don't create (SU#527).
+        # Loading the plan lazily via id-based lookup avoids that crash.
+        # Restore once SU#527 lands and SW's SU pin is bumped.
+        qs = self.boundary_periods.select_related("vintage")
         if boundary_type:
             if boundary_type not in self._BOUNDARY_TYPES:
                 raise ValueError(
@@ -350,14 +383,22 @@ class Address(models.Model):
     def boundaries_on(self, on_date):
         """Boundaries this address was in on ``on_date``.
 
-        Resolves the active redistricting plan(s) for ``on_date`` and
-        returns one ABP row per boundary type whose plan was active on
-        that date. Boundary types not covered by any plan-bound row fall
-        back to the NULL-plan (Census default) row when one exists for
-        the vintage covering ``on_date``.
+        For each boundary type, returns the ABP row whose ``context_date``
+        is the most recent on-or-before ``on_date`` (with rows whose
+        ``context_date`` is NULL treated as fallback / always-applicable).
 
         Returns a dict ``{boundary_type: AddressBoundaryPeriod}``.
         Missing keys mean no ABP row covers ``on_date`` for that type.
+
+        NOTE: An earlier version of this helper resolved plan-bound rows
+        by reading ``redistricting_plan.effective_from`` /
+        ``effective_to``. Those columns are declared on the SU model but
+        the SU migrations don't create them (SU#527). Until that lands,
+        we use ``context_date`` as the temporal indicator — which
+        ``assign_boundaries`` already sets to "the date this assignment
+        is valid for" — and skip the plan-effective-range path entirely.
+        Restore the richer resolution once SU#527 ships and SW's SU pin
+        bumps.
         """
         from socialwarehouse.geo.models import CensusVintageConfig
 
@@ -368,38 +409,22 @@ class Address(models.Model):
         periods = list(
             self.boundary_periods
             .filter(vintage=vintage)
-            .select_related("redistricting_plan")
+            .filter(
+                models.Q(context_date__lte=on_date)
+                | models.Q(context_date__isnull=True)
+            )
+            .order_by(models.F("context_date").desc(nulls_last=True))
         )
 
         result = {}
         for btype in self._BOUNDARY_TYPES:
             field = f"{btype}_geoid"
-            active = next(
-                (
-                    p for p in periods
-                    if p.redistricting_plan
-                    and p.redistricting_plan.effective_from <= on_date
-                    and (
-                        p.redistricting_plan.effective_to is None
-                        or p.redistricting_plan.effective_to >= on_date
-                    )
-                    and getattr(p, field, None)
-                ),
+            chosen = next(
+                (p for p in periods if getattr(p, field, None)),
                 None,
             )
-            if active:
-                result[btype] = active
-                continue
-            default = next(
-                (
-                    p for p in periods
-                    if p.redistricting_plan_id is None
-                    and getattr(p, field, None)
-                ),
-                None,
-            )
-            if default:
-                result[btype] = default
+            if chosen:
+                result[btype] = chosen
 
         return result
 
@@ -466,36 +491,38 @@ class Address(models.Model):
         sorted oldest-first. Each entry exposes:
 
           - ``geoid`` — the boundary GEOID for that period.
-          - ``effective_from`` — :class:`datetime.date` the period began.
-          - ``effective_to`` — :class:`datetime.date` it ended, or
-            ``None`` for "still active."
+          - ``effective_from`` — :class:`datetime.date` the period began,
+            taken from the ABP row's ``context_date`` (or the linked
+            vintage's start year when ``context_date`` is NULL).
+          - ``effective_to`` — :class:`datetime.date` it ended, derived
+            as the day before the next entry's ``effective_from``;
+            ``None`` for the most recent entry ("still active").
           - ``plan_name`` — the redistricting plan name that established
-            the assignment, or ``None`` for the Census-default (no plan).
+            the assignment, or ``None`` for the Census-default (no plan)
+            and for orphan FKs (non-existent plan id).
           - ``abp`` — the raw :class:`AddressBoundaryPeriod` row, for
-            callers wanting fields beyond the four headline ones
-            (``assignment_method``, ``congressional_term``,
-            ``plan_district_*``, etc.).
+            callers wanting fields beyond the four headline ones.
 
-        Effective ranges:
-          - Plan-bound rows: ``redistricting_plan.effective_from`` and
-            ``.effective_to``. ``effective_to`` may be ``None`` meaning
-            "currently active."
-          - NULL-plan rows (Census defaults): the linked vintage's
-            ``effective_start`` and ``effective_end`` years, converted
-            to ``date(year, 1, 1)`` and ``date(year, 12, 31)``.
+        Effective range derivation:
+          We use ``context_date`` (set by ``assign_boundaries`` to
+          "the date this assignment is valid for") to thread the
+          timeline. ``effective_to`` is derived from the next entry's
+          start. The first entry's ``effective_from`` falls back to
+          the vintage's effective start year when its ``context_date``
+          is NULL.
+
+          An earlier version of this helper read ``effective_from`` /
+          ``effective_to`` from the linked ``RedistrictingPlan`` row,
+          but those columns are declared on the SU model without a
+          matching migration (SU#527). Once that lands and SW's SU pin
+          bumps, this method should be revised to prefer plan-side
+          dates when available.
 
         Adjacent same-geoid rows are NOT collapsed. Callers wanting
         collapse-by-geoid can use :func:`itertools.groupby` on the
-        result — collapse semantics are opinionated (across vintage
-        boundaries? plan-name-aware?) and forcing them here would
-        mis-shape the layered API.
-
-        Rows whose ``redistricting_plan_id`` points at a non-existent
-        plan (the FK is ``db_constraint=False``, so orphans are
-        possible) are treated as NULL-plan; the entry's ``plan_name``
-        is ``None`` and the effective range falls back to the vintage.
+        result.
         """
-        from datetime import date
+        from datetime import date, timedelta
 
         if boundary_type not in self._BOUNDARY_TYPES:
             raise ValueError(
@@ -503,31 +530,30 @@ class Address(models.Model):
                 f"expected one of {self._BOUNDARY_TYPES}"
             )
 
-        rows = list(self.boundary_history(boundary_type=boundary_type))
+        # boundary_history returns newest-first; reverse to walk oldest-first.
+        rows = list(reversed(list(self.boundary_history(boundary_type=boundary_type))))
         entries = []
         field = f"{boundary_type}_geoid"
 
-        for abp in rows:
+        for i, abp in enumerate(rows):
             geoid = getattr(abp, field, None)
             if not geoid:
                 continue
 
-            plan = None
-            if abp.redistricting_plan_id is not None:
-                try:
-                    plan = abp.redistricting_plan
-                except Exception:
-                    plan = None
+            eff_from = abp.context_date
+            if eff_from is None and abp.vintage_id is not None:
+                eff_from = date(abp.vintage.effective_start, 1, 1)
 
-            if plan is not None:
-                eff_from = getattr(plan, "effective_from", None)
-                eff_to = getattr(plan, "effective_to", None)
-                plan_name = getattr(plan, "plan_name", None) or str(plan)
-            else:
-                vintage = abp.vintage
-                eff_from = date(vintage.effective_start, 1, 1)
-                eff_to = date(vintage.effective_end, 12, 31)
-                plan_name = None
+            eff_to = None
+            if i + 1 < len(rows):
+                next_abp = rows[i + 1]
+                next_start = next_abp.context_date
+                if next_start is None and next_abp.vintage_id is not None:
+                    next_start = date(next_abp.vintage.effective_start, 1, 1)
+                if next_start is not None:
+                    eff_to = next_start - timedelta(days=1)
+
+            plan_name = _safe_plan_name(abp.redistricting_plan_id)
 
             entries.append(BoundaryTimelineEntry(
                 geoid=geoid,
@@ -537,10 +563,7 @@ class Address(models.Model):
                 abp=abp,
             ))
 
-        return sorted(
-            entries,
-            key=lambda e: e.effective_from or date.min,
-        )
+        return entries
 
     def geoid_on(self, boundary_type, on_date):
         """The GEOID string for one boundary type as of ``on_date``, or None.

@@ -22,10 +22,11 @@ Example usage:
 
 from __future__ import annotations
 
+import csv
 import logging
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import geopandas as gpd
 import pandas as pd
@@ -47,6 +48,31 @@ DEFAULT_COLUMNS = {
     "sd": "vb_vf_sd",
     "hd": "vb_vf_hd",
 }
+
+# TargetSmart ID columns that pandas would otherwise auto-type as float64,
+# losing leading zeros on precinct codes, county FIPS, and district numbers.
+# Pass this dict (or a superset) as the `dtype` kwarg to load_voter_file or
+# voter_file_to_geodataframe when reading TargetSmart-format files.
+# Non-TargetSmart files: build your own dtype dict per the file's ID columns.
+# (S2 / SW#132 fix; recipe documented in docs/entities/swh_voters.md.)
+TARGETSMART_DEFAULT_DTYPES: dict[str, type] = {
+    "vb_vf_national_precinct_code": str,
+    "vb_vf_cd": str,
+    "vb_vf_sd": str,
+    "vb_vf_hd": str,
+    "vb_tsmart_county_name": str,
+    "vb_tsmart_county_code": str,
+    "vb_tsmart_zip": str,
+    "zip5": str,
+    "zip9": str,
+    "county_fips": str,
+}
+
+# utf-8-sig handles the BOM that TargetSmart and many voter-file exports
+# include. Plain "utf-8" decodes BOM bytes as part of the first column name,
+# producing a column like "﻿id". utf-8-sig is forward-compatible for
+# non-BOM files (just consumes the optional BOM if present).
+DEFAULT_CSV_ENCODING = "utf-8-sig"
 
 
 def _coerce_and_build_geometry(
@@ -102,6 +128,10 @@ def load_voter_file(
     chunk_size: int = 50_000,
     crs: int = 4326,
     schema: str = "public",
+    encoding: str = DEFAULT_CSV_ENCODING,
+    dtype: Optional[dict[str, Any]] = None,
+    quoting: int = csv.QUOTE_MINIMAL,
+    quotechar: str = '"',
 ) -> int:
     """Load a voter file CSV into PostGIS as a spatial table.
 
@@ -122,15 +152,26 @@ def load_voter_file(
         chunk_size: Number of rows per chunk for memory-efficient loading.
         crs: Coordinate reference system EPSG code. Defaults to 4326.
         schema: PostGIS schema. Defaults to "public".
+        encoding: CSV encoding. Defaults to utf-8-sig (handles BOM that
+            TargetSmart and many voter-file exports include).
+        dtype: Per-column dtype dict passed to pandas. For TargetSmart
+            files, pass TARGETSMART_DEFAULT_DTYPES (or a superset) to
+            preserve leading zeros on precinct/FIPS/district ID columns;
+            without this, pandas auto-types those as float64 and corrupts
+            the IDs. (S2 / SW#132)
+        quoting: csv quoting style; defaults to csv.QUOTE_MINIMAL.
+        quotechar: csv quotechar; defaults to '\"'.
 
     Returns:
         Total number of rows loaded.
 
     Example:
+        >>> from swh.voters import load_voter_file, TARGETSMART_DEFAULT_DTYPES
         >>> count = load_voter_file(
         ...     "/data/inputs/TX_voters.csv",
         ...     "voters_tx",
         ...     chunk_size=100_000,
+        ...     dtype=TARGETSMART_DEFAULT_DTYPES,
         ... )
         >>> print(f"Loaded {count} voters")
         Loaded 15234567 voters
@@ -149,7 +190,14 @@ def load_voter_file(
     first_chunk = True
 
     try:
-        for chunk in pd.read_csv(filepath, chunksize=chunk_size):
+        for chunk in pd.read_csv(
+            filepath,
+            chunksize=chunk_size,
+            encoding=encoding,
+            dtype=dtype,
+            quoting=quoting,
+            quotechar=quotechar,
+        ):
             gdf = _coerce_and_build_geometry(chunk, longitude_col, latitude_col, crs)
 
             if len(gdf) == 0:
@@ -197,6 +245,10 @@ def voter_file_to_geodataframe(
     longitude_col: str = DEFAULT_COLUMNS["longitude"],
     latitude_col: str = DEFAULT_COLUMNS["latitude"],
     crs: int = 4326,
+    encoding: str = DEFAULT_CSV_ENCODING,
+    dtype: Optional[dict[str, Any]] = None,
+    quoting: int = csv.QUOTE_MINIMAL,
+    quotechar: str = '"',
 ) -> gpd.GeoDataFrame:
     """Read a voter file CSV into a GeoDataFrame (in-memory, no PostGIS).
 
@@ -207,13 +259,26 @@ def voter_file_to_geodataframe(
         longitude_col: Column name for longitude.
         latitude_col: Column name for latitude.
         crs: Coordinate reference system EPSG code.
+        encoding / dtype / quoting / quotechar: pandas read_csv knobs.
+            See load_voter_file for guidance; for TargetSmart files pass
+            TARGETSMART_DEFAULT_DTYPES via dtype. (S2 / SW#132)
 
     Returns:
         GeoDataFrame with Point geometry column.
 
     Example:
-        >>> gdf = voter_file_to_geodataframe("/data/inputs/TX_voters.csv")
+        >>> from swh.voters import voter_file_to_geodataframe, TARGETSMART_DEFAULT_DTYPES
+        >>> gdf = voter_file_to_geodataframe(
+        ...     "/data/inputs/TX_voters.csv",
+        ...     dtype=TARGETSMART_DEFAULT_DTYPES,
+        ... )
         >>> gdf.head()
     """
-    df = pd.read_csv(filepath)
+    df = pd.read_csv(
+        filepath,
+        encoding=encoding,
+        dtype=dtype,
+        quoting=quoting,
+        quotechar=quotechar,
+    )
     return _coerce_and_build_geometry(df, longitude_col, latitude_col, crs)

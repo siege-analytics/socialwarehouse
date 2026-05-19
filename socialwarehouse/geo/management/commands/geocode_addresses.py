@@ -143,11 +143,19 @@ class Command(BaseCommand):
                     addr = chunk_map.get(result.input_id)
                     if addr is None:
                         continue
-                    if result.matched:
+                    # Census's `matched=True` does not guarantee coordinates:
+                    # the batch geocoder can return a non-Match (street + city
+                    # resolved) without populating lat/lon. Treating those as
+                    # geocoded=True with geom=NULL breaks the downstream
+                    # invariant "geocoded == True implies geom is not None"
+                    # — filters on `geocoded=True` alone return rows that
+                    # spatial joins then drop silently. Demote matched-without-
+                    # coords to the unmatched bucket so Phase 2 (Nominatim)
+                    # gets a real try. (M6 / SW#150)
+                    if result.matched and result.lat and result.lon:
                         addr.latitude = result.lat
                         addr.longitude = result.lon
-                        if result.lat and result.lon:
-                            addr.geom = Point(result.lon, result.lat, srid=4326)
+                        addr.geom = Point(result.lon, result.lat, srid=4326)
                         addr.geocoded = True
                         addr.geocode_source = "census"
                         addr.geocode_quality = result.match_type

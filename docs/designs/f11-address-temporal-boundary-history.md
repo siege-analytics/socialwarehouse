@@ -48,6 +48,26 @@ address.current_boundaries()
 
 The helper lives on `Address` so callers do `address.boundary_history()` rather than threading the address through a free function. ABP-side query methods (`AddressBoundaryPeriod.objects.for_address_on_date(...)`) are fine to add as a sibling surface, but the model-method form is the documented public API.
 
+### Addendum (2026-05-19): single-boundary + positional sugar
+
+After the v2 helper API was named, the maintainer surfaced three more query shapes the audience asks for: "CD on date X", "in reverse chron, the N-th CD for this address", and "in reverse chron, CDs N through M for this address." Two sugar methods cover the first two; the third is the underlying queryset's native slicing, kept on the queryset to avoid API bloat.
+
+```python
+address.boundary_on(boundary_type, on_date)
+    # Single ABP row for one boundary type as of on_date, or None.
+    # Sugar for `boundaries_on(on_date).get(boundary_type)`.
+
+address.boundary_at(boundary_type, position)
+    # ABP row at `position` in reverse-chron history for the type.
+    # 0-indexed. position=0 is the most recent. Returns None for
+    # out-of-range rather than raising IndexError.
+
+# For ranges, use the underlying queryset directly — no separate sugar:
+address.boundary_history(boundary_type="cd")[2:8]
+```
+
+Audience note: the 0-indexed semantics is a deliberate API choice. A 1-based form would be more readable for non-technical end users, but the audience here is data analysts who expect Python/SQL conventions. Encoding 1-based would build a "is 5 the 5th or the 6th?" trap into the API at every call site. The queryset slice shape is the canonical range form for the same reason — analysts already know how Python slicing works.
+
 ## Sequencing (unchanged from v1, refined)
 
 - **Step 1** (this PR, design v2): sign-off on the resolved decisions above. No code. **← this is where we are.**
@@ -64,6 +84,7 @@ The helper lives on `Address` so callers do `address.boundary_history()` rather 
 
 - **v1 (initial):** reframed F11 from "IntegerField vs FK" to "Address belongs to *which* boundary set, *when*?" Surfaced that ABP already exists as the temporal-history table. Proposed A1 + helper. Four open questions for the maintainer.
 - **v2 (2026-05-19, after maintainer answers):** named the load-bearing user-facing feature ("not only which boundaries it's currently contained by, but which ones it's ever been contained by"). Resolved decisions table. Helper API shape spelled out. Sequencing split step 2 into step 2 (helper, additive) + step 2b (signal-driven refresh) so the helper lands as the authoritative read path before the cache becomes formally "current-by-construction." Unblocks step 2.
+- **v2.1 (2026-05-19, addendum after step 2 opened):** added `boundary_on(type, date)` and `boundary_at(type, position)` sugar to cover three more named query shapes (single-type-as-of-date, positional). Range queries stay on the underlying queryset (slicing) to avoid API bloat. 0-indexed because the audience is data analysts who expect Python/SQL conventions.
 
 ---
 

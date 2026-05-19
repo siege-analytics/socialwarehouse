@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import csv
 import logging
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Optional
@@ -73,6 +74,32 @@ TARGETSMART_DEFAULT_DTYPES: dict[str, type] = {
 # producing a column like "﻿id". utf-8-sig is forward-compatible for
 # non-BOM files (just consumes the optional BOM if present).
 DEFAULT_CSV_ENCODING = "utf-8-sig"
+
+
+# Strict PostgreSQL identifier pattern: must start with a letter or
+# underscore, then letters / digits / underscores. Bare ASCII only —
+# we reject quoted-only identifiers (with spaces, hyphens, dots, etc.)
+# rather than try to escape them. Schema and table names passed to
+# load_voter_file flow into raw DDL (LOCK / DROP / ALTER TABLE) where
+# SQLAlchemy bind parameters do not apply; injection here would be a
+# direct vector. (S6 / SW#136)
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_identifier(value: str, kind: str) -> str:
+    """Validate a SQL identifier is bare ASCII and safe to interpolate.
+
+    Returns the value double-quoted for PostgreSQL ("foo") so case is
+    preserved in DDL. Raises ValueError if the input doesn't match the
+    strict identifier pattern.
+    """
+    if not isinstance(value, str) or not _IDENT_RE.match(value):
+        raise ValueError(
+            f"Invalid {kind} identifier: {value!r}. Must match "
+            f"[A-Za-z_][A-Za-z0-9_]* (bare ASCII, no spaces/hyphens/dots). "
+            f"(S6 / SW#136)"
+        )
+    return f'"{value}"'
 
 
 def _coerce_and_build_geometry(
@@ -179,12 +206,20 @@ def load_voter_file(
     from siege_utilities.geo.spatial_transformations import PostGISConnector
     from sqlalchemy import inspect as sa_inspect, text
 
+    # Validate identifiers BEFORE any I/O so a bad table/schema name
+    # fails fast (not after parsing the first chunk). (S6 / SW#136)
+    schema_q = _validate_identifier(schema, "schema")
+    table_q = _validate_identifier(table_name, "table_name")
+
     filepath = Path(filepath)
     conn_str = connection_string or settings.database.connection_string
     connector = PostGISConnector(conn_str)
 
-    # Use a staging table for atomicity
+    # Use a staging table for atomicity. The staging name is built from
+    # an already-validated table_name plus a hex UUID suffix — also
+    # safe under _IDENT_RE.
     staging_table = f"_staging_{table_name}_{uuid.uuid4().hex[:8]}"
+    staging_q = _validate_identifier(staging_table, "staging_table")
 
     total_rows = 0
     first_chunk = True
@@ -221,9 +256,9 @@ def load_voter_file(
         target_exists = inspector.has_table(table_name, schema=schema)
         with connector.engine.begin() as conn:
             if target_exists:
-                conn.execute(text(f"LOCK TABLE {schema}.{table_name} IN ACCESS EXCLUSIVE MODE"))
-            conn.execute(text(f"DROP TABLE IF EXISTS {schema}.{table_name}"))
-            conn.execute(text(f"ALTER TABLE {schema}.{staging_table} RENAME TO {table_name}"))
+                conn.execute(text(f"LOCK TABLE {schema_q}.{table_q} IN ACCESS EXCLUSIVE MODE"))
+            conn.execute(text(f"DROP TABLE IF EXISTS {schema_q}.{table_q}"))
+            conn.execute(text(f"ALTER TABLE {schema_q}.{staging_q} RENAME TO {table_q}"))
 
         logger.info("Finished loading %s -> %s (%d total rows)", filepath.name, table_name, total_rows)
 
@@ -232,7 +267,7 @@ def load_voter_file(
         logger.exception("Failed to load %s — cleaning up staging table", filepath.name)
         try:
             with connector.engine.begin() as conn:
-                conn.execute(text(f"DROP TABLE IF EXISTS {schema}.{staging_table}"))
+                conn.execute(text(f"DROP TABLE IF EXISTS {schema_q}.{staging_q}"))
         except Exception:
             logger.warning("Could not clean up staging table %s", staging_table)
         raise

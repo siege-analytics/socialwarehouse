@@ -1,5 +1,73 @@
 # Think note: F11 / SW#100 — Address belongs to *which* boundary set, *when*?
 
+**Status:** Design v2. The four open questions from v1 are now answered by the maintainer (2026-05-19); the load-bearing user-facing feature is named explicitly. Ready for the step-2 implementation PR (helper methods on Address).
+
+## The load-bearing feature (v2 framing, named explicitly)
+
+> "There are addresses, and we'd be able to surface not only which boundaries it's currently contained by, but which ones it's ever been contained by."
+
+This is the feature ABP exists to enable, and the one that justifies the temporal-history rearchitecture. Two views on the same Address:
+
+- **Current view**: a flat readout of the boundaries this address is in **right now**. One row per boundary type (CD, state-senate, state-house, VTD, county, tract, ...). Cheap.
+- **History view**: every boundary this address has *ever* been inside, with date ranges. A timeline.
+
+The history view is the load-bearing one. The current view is the cheap one. Questions like "did this voter ever live in CD-12?" can only be answered by the history view; the current view literally cannot answer that. The implementation must serve both with the same data model — there is no separate "history table" added; `AddressBoundaryPeriod` already is that table.
+
+## Resolved decisions (v2, 2026-05-19)
+
+| Q | Answer | Why |
+|---|---|---|
+| 1. Direction | **A1 + helper.** ABP is the source of truth for both views; `Address.{cd,sldl,...}_geoid` becomes a cache of the *current* snapshot. | Removing the Address-level fields (A2) breaks every caller; B leaves the framing that fails when two plans land in the same year. A1 keeps callers compatible and gives the helper authoritative reads. |
+| 2. Refresh policy for the denormalized cache | **(a) Signal-driven.** Every ABP write that lands a new current-period for an address updates the Address-level cached GEOIDs in the same transaction. | Any caller doing `Address.objects.filter(cd_geoid="06-12")` is implicitly asking "currently in CD 06-12." If the cache lags, that filter silently returns stale results. Pay the write-amplification once, at the write site, where ABP already knows it's superseding the previous period. (b) and (c) push staleness onto every caller and the cache stops being a cache. |
+| 3. Caller audit scope | **Mid.** Warehouse enrichment, the geocode pipeline, and analytics queries that filter/group by Address-level GEOID. Each needs a one-line decision: "current-as-cached (use the field) or history / as-of-date (use the helper)." Most stay on the cache. | The cache is fine for the common case once (a) is in place. The few callers that need history opt into the helper. |
+| 4. Canonical "current" definition | **(a) active-by-date(today).** Once the signal-driven refresh (Q2-a) is in place, the cache *is* "active-by-date(today)" by construction; the two definitions collapse into the same answer. | The legal/paranoid alternatives ((b) last-run, (c) most-recent-by-court-date) are real edge cases — what if `assign_boundaries` hasn't been re-run since the new plan took effect? — but they belong in a follow-up sub-feature, not in this PR. Filed as a future ticket. |
+
+## Proposed helper API shape (step-2 PR)
+
+```python
+# Read methods on Address (model methods, not managers):
+
+address.boundary_history(boundary_type=None)
+    # All ABP rows for this address, optionally filtered to one boundary type.
+    # Returns a queryset of AddressBoundaryPeriod ordered by effective_from desc.
+    # The "ever been contained by" view.
+
+address.boundaries_on(date)
+    # The boundaries this address was in on the given date.
+    # Returns dict { "cd": ABP-row, "sldl": ABP-row, ... } — one row per
+    # boundary type whose effective range contains `date`. Missing keys mean
+    # no ABP row covers `date` for that type.
+
+address.current_boundaries()
+    # Sugar for boundaries_on(date.today()).
+    # NOTE: With Q2-a's signal-driven cache refresh, the result is equivalent
+    # to reading address.cd_geoid / .sldl_geoid / ... directly. Use the cache
+    # for hot-path filters; use this helper when you want the ABP row's
+    # metadata (effective range, plan, assignment_method).
+```
+
+The helper lives on `Address` so callers do `address.boundary_history()` rather than threading the address through a free function. ABP-side query methods (`AddressBoundaryPeriod.objects.for_address_on_date(...)`) are fine to add as a sibling surface, but the model-method form is the documented public API.
+
+## Sequencing (unchanged from v1, refined)
+
+- **Step 1** (this PR, design v2): sign-off on the resolved decisions above. No code. **← this is where we are.**
+- **Step 2**: implementation PR — helper methods on `Address` (`boundary_history`, `boundaries_on`, `current_boundaries`), additive only. Includes unit tests against a small ABP fixture. **Does NOT include the signal-driven cache refresh from Q2-a yet** — that's step 2b.
+- **Step 2b**: separate PR for the Q2-a signal-driven refresh of the Address-level cached GEOIDs on ABP write. Includes the audit of existing ABP write sites so the signal is consistent. Sequenced after step 2 so the helper is the authoritative read path *before* the cache becomes formally "current-by-construction."
+- **Step 3**: caller-migration PR(s) — the audit from Q3. Most callers stay on the cache; the few that need history adopt the helper. Per-caller or grouped by subsystem, depending on scope.
+- **Step 4** (deferred, may not happen): consider further demoting or removing the Address-level GEOID fields once steps 2b + 3 are landed. Probably not — the cache stays useful indefinitely. Closed as won't-fix once steps 2-3 are stable.
+
+## Follow-ups (filed separately, do not block this PR)
+
+- **Edge-case: cache vs court-date drift.** If `assign_boundaries` hasn't run for a new plan that has legally taken effect, the cache is the "last-run" answer, not the "court-effective" answer. Today's Q4-a answer is "active-by-date(today)" under the assumption that ABP is up-to-date. The paranoid path (Q4-c: most-recent-by-court-date) is the safety net for that gap. Worth a ticket so it's not lost.
+
+## Revision history
+
+- **v1 (initial):** reframed F11 from "IntegerField vs FK" to "Address belongs to *which* boundary set, *when*?" Surfaced that ABP already exists as the temporal-history table. Proposed A1 + helper. Four open questions for the maintainer.
+- **v2 (2026-05-19, after maintainer answers):** named the load-bearing user-facing feature ("not only which boundaries it's currently contained by, but which ones it's ever been contained by"). Resolved decisions table. Helper API shape spelled out. Sequencing split step 2 into step 2 (helper, additive) + step 2b (signal-driven refresh) so the helper lands as the authoritative read path before the cache becomes formally "current-by-construction." Unblocks step 2.
+
+---
+
+
 ## What the user actually said
 
 > "This all needs to change. Census Year was the original plan, Vintage became important later, but as we are seeing more and more insane redistrictings happen, there are multiple plans that can happen in a year, even. We need to know to which set of boundaries the address belonged to at any point."

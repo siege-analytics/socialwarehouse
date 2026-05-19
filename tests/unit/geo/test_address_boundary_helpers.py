@@ -169,6 +169,107 @@ class TestBoundariesOnNullPlanFallback(TestCase):
         assert result == {}
 
 
+class TestBoundaryOn(TestCase):
+    """boundary_on: single-type sugar over boundaries_on."""
+
+    def setUp(self):
+        from socialwarehouse.geo.models import (
+            Address, AddressBoundaryPeriod, CensusVintageConfig,
+        )
+
+        CensusVintageConfig.seed_defaults()
+        vintage = CensusVintageConfig.objects.get(decade=2020)
+        self.addr = Address.objects.create(state_abbreviation="GA")
+
+        self.abp = AddressBoundaryPeriod.objects.create(
+            address=self.addr,
+            vintage=vintage,
+            state_geoid="13",
+            county_geoid="13089",
+            context_date=date(2023, 1, 1),
+            assignment_method="SPATIAL_JOIN",
+        )
+
+    def test_returns_row_when_type_present(self):
+        result = self.addr.boundary_on("county", date(2023, 6, 1))
+        assert result == self.abp
+
+    def test_returns_none_when_type_absent(self):
+        # No cd_geoid on the row, so cd should resolve to None.
+        result = self.addr.boundary_on("cd", date(2023, 6, 1))
+        assert result is None
+
+    def test_unknown_boundary_type_raises(self):
+        import pytest
+
+        with pytest.raises(ValueError) as exc:
+            self.addr.boundary_on("precinct", date(2023, 6, 1))
+        assert "precinct" in str(exc.value)
+
+
+class TestBoundaryAt(TestCase):
+    """boundary_at: positional access into reverse-chron history (0-indexed)."""
+
+    def setUp(self):
+        from socialwarehouse.geo.models import (
+            Address, AddressBoundaryPeriod, CensusVintageConfig,
+        )
+
+        CensusVintageConfig.seed_defaults()
+        vintage = CensusVintageConfig.objects.get(decade=2020)
+        self.addr = Address.objects.create(state_abbreviation="AL")
+
+        # Three CD-bearing periods, oldest first; will sort newest-first.
+        self.abp_old = AddressBoundaryPeriod.objects.create(
+            address=self.addr, vintage=vintage,
+            cd_geoid="0107", context_date=date(2020, 1, 1),
+            assignment_method="SPATIAL_JOIN",
+        )
+        self.abp_mid = AddressBoundaryPeriod.objects.create(
+            address=self.addr, vintage=vintage,
+            redistricting_plan_id=1,
+            cd_geoid="0102", context_date=date(2022, 6, 1),
+            assignment_method="PLAN_SPATIAL_JOIN",
+        )
+        self.abp_new = AddressBoundaryPeriod.objects.create(
+            address=self.addr, vintage=vintage,
+            redistricting_plan_id=2,
+            cd_geoid="0102", context_date=date(2024, 6, 1),
+            assignment_method="PLAN_SPATIAL_JOIN",
+        )
+
+    def test_position_zero_is_most_recent(self):
+        result = self.addr.boundary_at("cd", 0)
+        assert result == self.abp_new
+
+    def test_position_n_walks_back_in_time(self):
+        assert self.addr.boundary_at("cd", 1) == self.abp_mid
+        assert self.addr.boundary_at("cd", 2) == self.abp_old
+
+    def test_out_of_range_returns_none(self):
+        assert self.addr.boundary_at("cd", 50) is None
+
+    def test_negative_position_raises(self):
+        import pytest
+
+        with pytest.raises(ValueError):
+            self.addr.boundary_at("cd", -1)
+
+    def test_unknown_boundary_type_raises(self):
+        import pytest
+
+        with pytest.raises(ValueError) as exc:
+            self.addr.boundary_at("precinct", 0)
+        assert "precinct" in str(exc.value)
+
+    def test_slice_via_queryset_for_ranges(self):
+        # Documenting the canonical range pattern: use queryset slicing
+        # directly rather than a separate boundary_range helper.
+        history = self.addr.boundary_history(boundary_type="cd")
+        rows = list(history[1:3])
+        assert rows == [self.abp_mid, self.abp_old]
+
+
 class TestCurrentBoundaries(TestCase):
     """current_boundaries delegates to boundaries_on(today)."""
 

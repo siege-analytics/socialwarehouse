@@ -391,6 +391,44 @@ class Address(models.Model):
 
         return self.boundaries_on(timezone.localdate())
 
+    def boundary_on(self, boundary_type, on_date):
+        """The ABP row for one boundary type, as of ``on_date``.
+
+        Sugar for ``self.boundaries_on(on_date).get(boundary_type)``.
+        Returns the ABP row, or ``None`` if no row covers ``on_date``
+        for that type. Validates ``boundary_type`` against the known
+        set up-front so a typo doesn't silently return ``None``.
+        """
+        if boundary_type not in self._BOUNDARY_TYPES:
+            raise ValueError(
+                f"Unknown boundary_type {boundary_type!r}; "
+                f"expected one of {self._BOUNDARY_TYPES}"
+            )
+        return self.boundaries_on(on_date).get(boundary_type)
+
+    def boundary_at(self, boundary_type, position):
+        """The ABP row at ``position`` in reverse-chron history for ``boundary_type``.
+
+        ``position`` is 0-indexed (Python convention; the audience is
+        data analysts, not domain users, so SQL/Python's 0-based
+        indexing matches the caller reflex). ``position=0`` is the
+        most recent ABP row for the given boundary type; ``position=4``
+        is the fifth most recent.
+
+        Returns ``None`` for out-of-range positions rather than
+        raising; callers asking for "the 50th most recent CD" on an
+        address with two CD periods get a clean ``None`` rather than
+        an IndexError.
+
+        For a slice (e.g. the 3rd through 8th most recent), use the
+        underlying queryset directly:
+            ``addr.boundary_history(boundary_type="cd")[2:8]``
+        """
+        if position < 0:
+            raise ValueError(f"position must be non-negative, got {position}")
+        qs = self.boundary_history(boundary_type=boundary_type)
+        return qs[position:position + 1].first()
+
 
 # Backwards-compatible alias
 United_States_Address = Address

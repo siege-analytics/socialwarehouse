@@ -68,6 +68,54 @@ address.boundary_history(boundary_type="cd")[2:8]
 
 Audience note: the 0-indexed semantics is a deliberate API choice. A 1-based form would be more readable for non-technical end users, but the audience here is data analysts who expect Python/SQL conventions. Encoding 1-based would build a "is 5 the 5th or the 6th?" trap into the API at every call site. The queryset slice shape is the canonical range form for the same reason — analysts already know how Python slicing works.
 
+### Addendum (2026-05-19, v2.2): timeline + geoid sugar after dogfooding
+
+After step-2 + the v2.1 sugar shipped, dogfooding the API surfaced three gaps:
+
+1. **The "ever been contained by" pitch is most useful as a timeline** — `[(geoid, effective_from, effective_to, plan_name), ...]` chronologically — and assembling it from raw ABP rows requires walking into `redistricting_plan.effective_from / effective_to` (or falling back to vintage-derived dates for NULL-plan rows). Every caller would write that loop five different ways. It belongs in the helper layer.
+2. **Two-step geoid access is awkward.** `addr.boundary_on("cd", date).cd_geoid` reads weirdly and explodes if the row was None. A one-step `geoid_on(boundary_type, date)` returning the string (or None) closes the common case.
+3. **A `current_geoid(boundary_type)` sibling** completes the symmetry with `current_boundaries`.
+
+Authorized methods added in this addendum:
+
+```python
+address.boundary_timeline(boundary_type)
+    # Chronological timeline. Returns list of BoundaryTimelineEntry
+    # namedtuples (geoid, effective_from, effective_to, plan_name,
+    # abp), sorted oldest-first.
+    #
+    # Effective ranges:
+    #   - Plan-bound rows: from redistricting_plan.effective_from /
+    #     effective_to (effective_to may be None for "still active").
+    #   - NULL-plan rows: from vintage.effective_start /
+    #     effective_end (converted to date(year, 1, 1) and
+    #     date(year, 12, 31)).
+    #
+    # Adjacent same-geoid rows are NOT collapsed; callers wanting
+    # that can itertools.groupby on the result. Collapse semantics
+    # are opinionated (across vintage boundaries? plan-name-aware?)
+    # and forcing them here would mis-shape the layered API.
+
+address.geoid_on(boundary_type, on_date)
+    # String GEOID (or None) for one boundary type as of on_date.
+    # Sugar for `boundary_on(...).{type}_geoid` with None-safety.
+
+address.current_geoid(boundary_type)
+    # String GEOID (or None) for one boundary type as of today.
+    # Sugar for `geoid_on(boundary_type, today)`. With the step-2b
+    # signal in place, returns the same value as self.{type}_geoid.
+```
+
+Surface check: this brings the total to **seven public read methods** on Address — at the upper edge of "small API." Each method maps to a distinct caller-facing question (history, all-types-at-date, one-type-at-date, Nth-in-chron, current-all, current-one, timeline); bundling would lose the named-use-case discoverability that was the whole point. Hold at seven; revisit if an eighth is proposed.
+
+Documentation amendments to existing methods (shipped alongside):
+- `boundary_history()` unfiltered returns rows with sparse geoid fills (plan-bound CD rows have null sldl/sldu, etc.); docstring will name this.
+- `current_boundaries()` / `current_geoid()` use `timezone.localdate()`; docstring notes that the answer is server-timezone-dependent at midnight boundaries.
+- `boundary_history()` NULL `context_date` rows sort last under DESC (Postgres default); docstring notes this.
+
+Deferred to follow-up ticket (does NOT block this step):
+- **Perf: `boundaries_on(date)` always fetches all periods for the vintage**, even when called from `boundary_on(boundary_type, date)` for a single type. Single-digit-to-dozens of ABP rows per address is the realistic scale, so this is acceptable today. Worth filing in case `assign_boundaries` cadence grows.
+
 ## Sequencing (unchanged from v1, refined)
 
 - **Step 1** (this PR, design v2): sign-off on the resolved decisions above. No code. **← this is where we are.**
@@ -85,6 +133,7 @@ Audience note: the 0-indexed semantics is a deliberate API choice. A 1-based for
 - **v1 (initial):** reframed F11 from "IntegerField vs FK" to "Address belongs to *which* boundary set, *when*?" Surfaced that ABP already exists as the temporal-history table. Proposed A1 + helper. Four open questions for the maintainer.
 - **v2 (2026-05-19, after maintainer answers):** named the load-bearing user-facing feature ("not only which boundaries it's currently contained by, but which ones it's ever been contained by"). Resolved decisions table. Helper API shape spelled out. Sequencing split step 2 into step 2 (helper, additive) + step 2b (signal-driven refresh) so the helper lands as the authoritative read path before the cache becomes formally "current-by-construction." Unblocks step 2.
 - **v2.1 (2026-05-19, addendum after step 2 opened):** added `boundary_on(type, date)` and `boundary_at(type, position)` sugar to cover three more named query shapes (single-type-as-of-date, positional). Range queries stay on the underlying queryset (slicing) to avoid API bloat. 0-indexed because the audience is data analysts who expect Python/SQL conventions.
+- **v2.2 (2026-05-19, addendum after dogfooding step 2 + v2.1):** added `boundary_timeline(type)` (the killer-feature timeline view), `geoid_on(type, date)`, `current_geoid(type)`. Documentation amends on existing methods cover sparse-geoid-fill, timezone dependency, and NULL ordering. Filed the "perf: single-type fetches all periods" observation as a follow-up; does not block this step. Surface total is now seven public read methods, weighed and held.
 
 ---
 

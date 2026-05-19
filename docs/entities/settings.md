@@ -22,10 +22,10 @@ Per-environment Django settings split. `base.py` declares the shared defaults; `
 | `DJANGO_SECRET_KEY` | base.py | None — **required in production** (ST1 fix) | **YES (production only)** — KeyError at startup |
 | `POSTGRES_DB` | base.py, test.py | `"socialwarehouse"` (base) / `"test_socialwarehouse"` (test) | No |
 | `POSTGRES_USER` | base.py | `"socialwarehouse"` | No |
-| `POSTGRES_PASSWORD` | base.py | `""` (anti-pattern, see ST4) | No |
+| `POSTGRES_PASSWORD` | base.py (dev fallback), production.py (required) | `""` (dev only — base.py) | **YES (production only)** — KeyError at startup (ST4 fix) |
 | `POSTGRES_HOST` | base.py | `"localhost"` | No |
 | `POSTGRES_PORT` | base.py | `"5432"` | No |
-| `ALLOWED_HOSTS` | production.py | `""` parsed to `[""]` (anti-pattern, see ST2) | No |
+| `ALLOWED_HOSTS` | production.py | None — **required in production** (ST2 fix); blanks are filtered, all-blank raises RuntimeError | **YES (production only)** — KeyError or RuntimeError at startup |
 | `CELERY_BROKER_URL` | base.py | `"redis://localhost:6379/0"` | No |
 | `CELERY_RESULT_BACKEND` | base.py | `"redis://localhost:6379/0"` | No |
 
@@ -51,8 +51,8 @@ Mirrored from upstream GST settings so SW doesn't pull GST's full config (which 
 ## Known assumptions / gotchas
 
 - **`SECRET_KEY` MUST be set in production via `DJANGO_SECRET_KEY` env var.** Post-ST1/SW#139 fix: `production.py` does `SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]` which raises `KeyError` at startup if unset. `base.py` retains a documented dev-only fallback for local development. Production deployments that forget the env var **fail fast** rather than silently using the insecure default. (Was ST1, fixed.)
-- **`POSTGRES_PASSWORD` defaults to empty string.** Connection-time failure surfaces as opaque PG error rather than clear ConfigError at startup. Same anti-pattern as `S3_ACCESS_KEY` in `delta/config.py` (D5). (ST4, open.)
-- **`ALLOWED_HOSTS` parses to `[""]` on missing env var in production.py.** `os.environ.get("ALLOWED_HOSTS", "").split(",")` returns `[""]` not `[]`. Truthy + matches no hosts; Django rejects all requests with confusing DisallowedHost. (ST2, open.)
+- **`POSTGRES_PASSWORD` is required in production.** Post-ST4/SW#142 fix: `production.py` overrides `DATABASES["default"]["PASSWORD"]` with `os.environ["POSTGRES_PASSWORD"]` (KeyError at startup if unset). `base.py` retains the empty-string default for dev. The `S3_ACCESS_KEY` / `S3_SECRET_KEY` in `delta/config.py` (D5) is the same anti-pattern but separate scope. (Was ST4, fixed.)
+- **`ALLOWED_HOSTS` is required in production with blank-filtering.** Post-ST2/SW#140 fix: `production.py` does `[h.strip() for h in os.environ["ALLOWED_HOSTS"].split(",") if h.strip()]` — KeyError if env var missing, RuntimeError if it parses to no hosts (e.g. empty string or only commas). Pre-fix returned `[""]` and surfaced as confusing DisallowedHost on every request. (Was ST2, fixed.)
 - **`"locations"` in INSTALLED_APPS depends on hidden sys.path manipulation** from the GST submodule. If the sys.path mechanism breaks (manage.py / conftest.py / wsgi.py refactor), Django fails at startup with `No module named 'locations'`. (ST3, open.)
 - **Settings split via wildcard import** (`from .base import *`). Override files don't re-import `os` explicitly — `production.py` uses `os.environ` through the wildcard import (with `# noqa: F405`). Brittle if `os` is removed from base.py.
 
@@ -70,3 +70,4 @@ Mirrored from upstream GST settings so SW doesn't pull GST's full config (which 
 ## Survey log
 
 - 2026-05-18: Seeded via survey-context NO-DOC path during ST1 / SW#139 fix. Documents the post-ST1 fail-fast pattern for `SECRET_KEY` in production. Pre-ST1 behavior was a hardcoded `"insecure-dev-key-change-in-production"` default in `base.py` that production deployments silently inherited when the env var was unset.
+- 2026-05-18: ST2 / SW#140 + ST4 / SW#142 — production.py now fail-fast on missing `ALLOWED_HOSTS` (KeyError, or RuntimeError if env var parses to no hosts) and missing `POSTGRES_PASSWORD` (KeyError). Same shape as ST1 — bracket subscript at the production override layer; base.py retains dev fallbacks.

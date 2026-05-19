@@ -103,6 +103,18 @@ class DimSurvey(models.Model):
     One row per (survey_type, vintage_year) combination.
     """
 
+    # Scope is intentionally narrow: only Census programs SW has an
+    # active loader path for today. Adding a choice here requires a
+    # Django migration AND a corresponding loader; adding it without
+    # the loader puts a non-functional option in the admin dropdown
+    # that confuses operators. Programs SW does NOT yet handle (add
+    # in lockstep with their loader):
+    #   - PEP (Population Estimates Program)
+    #   - Economic Census (5-year)
+    #   - ACS Subject Tables
+    #   - CHAS (Comprehensive Housing Affordability Strategy)
+    #   - American Housing Survey
+    # See W5 / SW#109 for the original gap-discovery context.
     SURVEY_TYPES = [
         ("acs5", "ACS 5-Year Estimates"),
         ("acs1", "ACS 1-Year Estimates"),

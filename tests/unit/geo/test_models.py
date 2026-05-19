@@ -48,7 +48,8 @@ class TestAddressModel(TestCase):
         )
         assert addr.state_geoid == "06"
         assert addr.county_geoid == "06037"
-        assert addr.tract_geoid is None
+        # Post-F3/SW#92: CharField default is "" not None.
+        assert addr.tract_geoid == ""
 
     def test_backwards_compat_alias(self):
         from socialwarehouse.geo.models import United_States_Address, Address

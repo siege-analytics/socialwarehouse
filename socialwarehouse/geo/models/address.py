@@ -56,34 +56,39 @@ class Address(models.Model):
     """
 
     # ── Address components ───────────────────────────────────────────────
-    primary_number = models.CharField(max_length=250, null=True, blank=True, default=None)
-    street_name = models.CharField(max_length=250, null=True, blank=True, default=None)
-    street_suffix = models.CharField(max_length=250, null=True, blank=True, default=None)
-    city_name = models.CharField(max_length=250, null=True, blank=True, default=None)
-    default_city_name = models.CharField(max_length=250, null=True, blank=True, default=None)
-    state_abbreviation = models.CharField(max_length=2, null=True, blank=True, default=None)
-    zip5 = models.CharField(max_length=5, null=True, blank=True, default=None)
-    delivery_point = models.CharField(max_length=99, null=True, blank=True, default=None)
-    delivery_point_check_digit = models.CharField(max_length=99, null=True, blank=True, default=None)
+    # F3/SW#92: CharFields use blank=True, default="" (Django convention).
+    # null=True was the pre-F3 shape; the data-backfill in migration 0003
+    # converts existing NULL rows to "" before the NOT NULL constraint.
+    primary_number = models.CharField(max_length=250, blank=True, default="")
+    street_name = models.CharField(max_length=250, blank=True, default="")
+    street_suffix = models.CharField(max_length=250, blank=True, default="")
+    city_name = models.CharField(max_length=250, blank=True, default="")
+    default_city_name = models.CharField(max_length=250, blank=True, default="")
+    state_abbreviation = models.CharField(max_length=2, blank=True, default="")
+    zip5 = models.CharField(max_length=5, blank=True, default="")
+    delivery_point = models.CharField(max_length=99, blank=True, default="")
+    delivery_point_check_digit = models.CharField(max_length=99, blank=True, default="")
 
     # ── USPS & RDI classification ────────────────────────────────────────
-    record_type = models.CharField(max_length=250, null=True, blank=True, default=None)
-    zip_type = models.CharField(max_length=250, null=True, blank=True, default=None)
-    county_fips = models.CharField(max_length=250, null=True, blank=True, default=None)
-    county_name = models.CharField(max_length=250, null=True, blank=True, default=None)
-    carrier_route = models.CharField(max_length=250, null=True, blank=True, default=None)
-    congressional_district = models.CharField(max_length=250, null=True, blank=True, default=None)
-    rdi = models.CharField(max_length=250, null=True, blank=True, default=None)
-    elot_sequence = models.CharField(max_length=250, null=True, blank=True, default=None)
-    elot_sort = models.CharField(max_length=250, null=True, blank=True, default=None)
+    record_type = models.CharField(max_length=250, blank=True, default="")
+    zip_type = models.CharField(max_length=250, blank=True, default="")
+    county_fips = models.CharField(max_length=250, blank=True, default="")
+    county_name = models.CharField(max_length=250, blank=True, default="")
+    carrier_route = models.CharField(max_length=250, blank=True, default="")
+    congressional_district = models.CharField(max_length=250, blank=True, default="")
+    rdi = models.CharField(max_length=250, blank=True, default="")
+    elot_sequence = models.CharField(max_length=250, blank=True, default="")
+    elot_sort = models.CharField(max_length=250, blank=True, default="")
 
     # ── Coordinates ──────────────────────────────────────────────────────
+    # latitude/longitude/geom stay null=True — numeric NULL is the canonical
+    # "unknown" for numerics/geometries (F3 is CharField-scope only).
     latitude = models.DecimalField(max_digits=22, decimal_places=16, null=True, blank=True, default=None)
     longitude = models.DecimalField(max_digits=22, decimal_places=16, null=True, blank=True, default=None)
-    coordinate_license = models.CharField(max_length=250, null=True, blank=True, default=None)
-    precision = models.CharField(max_length=250, null=True, blank=True, default=None)
-    time_zone = models.CharField(max_length=250, null=True, blank=True, default=None)
-    utc_offset = models.CharField(max_length=250, null=True, blank=True, default=None)
+    coordinate_license = models.CharField(max_length=250, blank=True, default="")
+    precision = models.CharField(max_length=250, blank=True, default="")
+    time_zone = models.CharField(max_length=250, blank=True, default="")
+    utc_offset = models.CharField(max_length=250, blank=True, default="")
 
     # ── GeoDjango geometry ───────────────────────────────────────────────
     geom = models.PointField(srid=4326, null=True, blank=True, default=None)
@@ -91,11 +96,11 @@ class Address(models.Model):
     # ── Geocoding metadata ───────────────────────────────────────────────
     geocoded = models.BooleanField(default=False, help_text="Whether address has been geocoded")
     geocode_quality = models.CharField(
-        max_length=20, null=True, blank=True,
+        max_length=20, blank=True, default="",
         help_text="Quality: Rooftop, Interpolated, Approximate, Zip",
     )
     geocode_source = models.CharField(
-        max_length=50, null=True, blank=True,
+        max_length=50, blank=True, default="",
         choices=GEOCODE_SOURCE_CHOICES,
         help_text=(
             "Source geocoder. Canonical values lowercase per "
@@ -115,19 +120,23 @@ class Address(models.Model):
     )
 
     # ── Census unit GEOIDs (primary, string-indexed) ─────────────────────
-    state_geoid = models.CharField(max_length=2, null=True, blank=True)
-    county_geoid = models.CharField(max_length=5, null=True, blank=True)
-    tract_geoid = models.CharField(max_length=11, null=True, blank=True)
-    block_group_geoid = models.CharField(max_length=12, null=True, blank=True)
-    block_geoid = models.CharField(max_length=15, null=True, blank=True)
-    vtd_geoid = models.CharField(max_length=11, null=True, blank=True)
-    cd_geoid = models.CharField(max_length=4, null=True, blank=True)
+    # F3/SW#92: "" means "not yet assigned" (Django convention). Callers
+    # that need "has an assignment" should use exclude(field="") rather
+    # than filter(field__isnull=False) — the latter becomes always-true
+    # against a NOT NULL column.
+    state_geoid = models.CharField(max_length=2, blank=True, default="")
+    county_geoid = models.CharField(max_length=5, blank=True, default="")
+    tract_geoid = models.CharField(max_length=11, blank=True, default="")
+    block_group_geoid = models.CharField(max_length=12, blank=True, default="")
+    block_geoid = models.CharField(max_length=15, blank=True, default="")
+    vtd_geoid = models.CharField(max_length=11, blank=True, default="")
+    cd_geoid = models.CharField(max_length=4, blank=True, default="")
     sldl_geoid = models.CharField(
-        max_length=5, null=True, blank=True,
+        max_length=5, blank=True, default="",
         help_text="State Legislative District Lower GEOID (state FIPS + district)",
     )
     sldu_geoid = models.CharField(
-        max_length=5, null=True, blank=True,
+        max_length=5, blank=True, default="",
         help_text="State Legislative District Upper GEOID (state FIPS + district)",
     )
     census_units_assigned_at = models.DateTimeField(null=True, blank=True)

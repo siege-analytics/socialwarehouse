@@ -104,8 +104,15 @@ def check_for_updates(state_file: Path, states: list[str] | None = None) -> tupl
 
 
 def download_plans(plans: list[dict], output_dir: Path) -> list[Path]:
-    """Download boundary plan files."""
-    import requests
+    """Download boundary plan files.
+
+    Uses ``siege_utilities.files.remote.download_file_with_retry`` for the
+    actual HTTP download — it provides retry on transient failure,
+    streaming, and consistent logging. Pre-fix this function used raw
+    ``requests.get(..., stream=True)`` with a hand-rolled chunk loop and
+    no retry. (R2 / SW#103)
+    """
+    from siege_utilities.files.remote import download_file_with_retry
 
     output_dir.mkdir(parents=True, exist_ok=True)
     downloaded = []
@@ -125,15 +132,24 @@ def download_plans(plans: list[dict], output_dir: Path) -> list[Path]:
             continue
 
         logger.info("Downloading: %s", name)
-        try:
-            resp = requests.get(url, stream=True, timeout=300)
-            resp.raise_for_status()
-            with open(output_path, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            downloaded.append(output_path)
-        except Exception as e:
-            logger.error("Failed to download %s: %s", name, e)
+        # download_file_with_retry returns the local filename string on
+        # success or False on failure (after all retries). We convert the
+        # success return back to a Path for the existing downstream
+        # consumers.
+        result = download_file_with_retry(
+            url=url,
+            local_filename=str(output_path),
+            max_retries=3,
+            retry_delay=5,
+        )
+        if result:
+            downloaded.append(Path(result))
+        else:
+            logger.error(
+                "Failed to download %s after retries; see siege_utilities "
+                "log for per-attempt detail.",
+                name,
+            )
 
     return downloaded
 

@@ -153,7 +153,7 @@ class Migration(migrations.Migration):
     # those choices and adds default="". The AlterField below uses the
     # full post-F3 shape for geocode_source explicitly.
     dependencies = [
-        ("geo", "0002_address_geocode_source_choices"),
+        ("sw_geo", "0002_address_geocode_source_choices"),
     ]
 
     operations = [

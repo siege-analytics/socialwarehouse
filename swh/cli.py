@@ -35,18 +35,31 @@ import click
 
 from swh.config import settings
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
 logger = logging.getLogger("swh")
+
+
+def _configure_cli_logging():
+    """Configure root logging for CLI invocations only.
+
+    Pre-S5/SW#135 fix: logging.basicConfig ran at module import. Any
+    importer of swh.cli (tests, notebooks, downstream packages) had
+    their root logger silently reconfigured as a side effect of import,
+    overriding handlers/levels they had already set. Now: the call is
+    gated behind the CLI group callback so it runs only when this
+    module is actually being driven as a CLI (via `python -m swh.cli`
+    or the `__main__` block), not on every import.
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
 
 
 @click.group()
 @click.version_option(package_name="socialwarehouse")
 def cli():
     """Social Warehouse — data loading CLI powered by siege_utilities."""
-    pass
+    _configure_cli_logging()
 
 
 @cli.command("download-census")

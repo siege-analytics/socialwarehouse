@@ -41,13 +41,13 @@ class TestLoadQCEWHappyPath(LoadQCEWTestBase):
         from socialwarehouse.economic.models import BLSQCEWAggregate
 
         mock_load.return_value = self._df([
-            {"area_fips": "06037", "own_code": "5", "industry_code": "10",  # county, private, all-industries total
+            {"area_fips": "06037", "agglvl_code": "50", "own_code": "5", "industry_code": "10",  # county, private, all-industries total
              "qtrly_estabs": 230_000, "month3_emplvl": 4_125_000,
              "total_qtrly_wages": 87_500_000_000, "avg_wkly_wage": 1_650, "qtr": 3, "year": 2024},
-            {"area_fips": "06037", "own_code": "5", "industry_code": "23",  # construction sector
+            {"area_fips": "06037", "agglvl_code": "50", "own_code": "5", "industry_code": "23",  # construction sector
              "qtrly_estabs": 18_500, "month3_emplvl": 152_000,
              "total_qtrly_wages": 2_800_000_000, "avg_wkly_wage": 1_420, "qtr": 3, "year": 2024},
-            {"area_fips": "06037", "own_code": "0", "industry_code": "10",  # total covered, all-industries
+            {"area_fips": "06037", "agglvl_code": "50", "own_code": "0", "industry_code": "10",  # total covered, all-industries
              "qtrly_estabs": 240_000, "month3_emplvl": 4_400_000,
              "total_qtrly_wages": 90_000_000_000, "avg_wkly_wage": 1_700, "qtr": 3, "year": 2024},
         ])
@@ -80,7 +80,7 @@ class TestLoadQCEWFiltersNonCountyRows(LoadQCEWTestBase):
             {"area_fips": "06", "own_code": "5", "industry_code": "10",  # STATE-level row
              "qtrly_estabs": 0, "month3_emplvl": 0, "total_qtrly_wages": 0, "avg_wkly_wage": 0,
              "qtr": 3, "year": 2024},
-            {"area_fips": "06037", "own_code": "5", "industry_code": "10",
+            {"area_fips": "06037", "agglvl_code": "50", "own_code": "5", "industry_code": "10",
              "qtrly_estabs": 1, "month3_emplvl": 100, "total_qtrly_wages": 1000, "avg_wkly_wage": 250,
              "qtr": 3, "year": 2024},
         ])
@@ -100,7 +100,7 @@ class TestLoadQCEWIdempotent(LoadQCEWTestBase):
         from socialwarehouse.economic.models import BLSQCEWAggregate
 
         mock_load.return_value = self._df([
-            {"area_fips": "06037", "own_code": "5", "industry_code": "10",
+            {"area_fips": "06037", "agglvl_code": "50", "own_code": "5", "industry_code": "10",
              "qtrly_estabs": 100, "month3_emplvl": 4_000_000,
              "total_qtrly_wages": 85_000_000_000, "avg_wkly_wage": 1_600,
              "qtr": 3, "year": 2024},
@@ -108,7 +108,7 @@ class TestLoadQCEWIdempotent(LoadQCEWTestBase):
         call_command("load_qcew", f"--vintage={self.vintage.name}", "--state=06", verbosity=0)
 
         mock_load.return_value = self._df([
-            {"area_fips": "06037", "own_code": "5", "industry_code": "10",
+            {"area_fips": "06037", "agglvl_code": "50", "own_code": "5", "industry_code": "10",
              "qtrly_estabs": 230_000, "month3_emplvl": 4_125_000,
              "total_qtrly_wages": 87_500_000_000, "avg_wkly_wage": 1_650,
              "qtr": 3, "year": 2024},
@@ -118,6 +118,101 @@ class TestLoadQCEWIdempotent(LoadQCEWTestBase):
         rows = BLSQCEWAggregate.objects.filter(geoid="06037", industry_code="10", ownership_code="5")
         assert rows.count() == 1
         assert rows.first().establishment_count == 230_000
+
+
+class TestLoadQCEWBoundaryTypePhase2(LoadQCEWTestBase):
+    """E Phase 2: --boundary-type=cbsa loads MSA-level rows; default
+    stays county-only (Phase 1 backward compat)."""
+
+    @patch("socialwarehouse.economic.services.bls_qcew_files.QCEWFiles.load")
+    def test_default_loads_only_county(self, mock_load):
+        from socialwarehouse.economic.models import BLSQCEWAggregate
+
+        mock_load.return_value = self._df([
+            {"area_fips": "06037", "agglvl_code": "50", "own_code": "5",
+             "industry_code": "10", "qtrly_estabs": 1, "month3_emplvl": 100,
+             "total_qtrly_wages": 1000, "avg_wkly_wage": 100, "qtr": 3, "year": 2024},
+            {"area_fips": "C3108", "agglvl_code": "40", "own_code": "5",
+             "industry_code": "10", "qtrly_estabs": 10, "month3_emplvl": 10_000,
+             "total_qtrly_wages": 100_000, "avg_wkly_wage": 1500, "qtr": 3, "year": 2024},
+        ])
+        call_command("load_qcew", f"--vintage={self.vintage.name}", "--state=06", verbosity=0)
+
+        rows = BLSQCEWAggregate.objects.filter(vintage=self.vintage)
+        assert rows.count() == 1
+        assert rows.first().boundary_type == "county"
+        assert rows.first().geoid == "06037"
+
+    @patch("socialwarehouse.economic.services.bls_qcew_files.QCEWFiles.load")
+    def test_cbsa_loads_only_msa(self, mock_load):
+        from socialwarehouse.economic.models import BLSQCEWAggregate
+
+        mock_load.return_value = self._df([
+            {"area_fips": "06037", "agglvl_code": "50", "own_code": "5",
+             "industry_code": "10", "qtrly_estabs": 1, "month3_emplvl": 100,
+             "total_qtrly_wages": 1000, "avg_wkly_wage": 100, "qtr": 3, "year": 2024},
+            {"area_fips": "C3108", "agglvl_code": "40", "own_code": "5",
+             "industry_code": "10", "qtrly_estabs": 10, "month3_emplvl": 10_000,
+             "total_qtrly_wages": 100_000, "avg_wkly_wage": 1500, "qtr": 3, "year": 2024},
+        ])
+        call_command("load_qcew", f"--vintage={self.vintage.name}", "--state=06",
+                     "--boundary-type=cbsa", verbosity=0)
+
+        rows = BLSQCEWAggregate.objects.filter(vintage=self.vintage)
+        assert rows.count() == 1
+        assert rows.first().boundary_type == "cbsa"
+        assert rows.first().geoid == "C3108"
+
+    @patch("socialwarehouse.economic.services.bls_qcew_files.QCEWFiles.load")
+    def test_both_loads_county_and_cbsa(self, mock_load):
+        from socialwarehouse.economic.models import BLSQCEWAggregate
+
+        mock_load.return_value = self._df([
+            {"area_fips": "06037", "agglvl_code": "50", "own_code": "5",
+             "industry_code": "10", "qtrly_estabs": 1, "month3_emplvl": 100,
+             "total_qtrly_wages": 1000, "avg_wkly_wage": 100, "qtr": 3, "year": 2024},
+            {"area_fips": "C3108", "agglvl_code": "40", "own_code": "5",
+             "industry_code": "10", "qtrly_estabs": 10, "month3_emplvl": 10_000,
+             "total_qtrly_wages": 100_000, "avg_wkly_wage": 1500, "qtr": 3, "year": 2024},
+            {"area_fips": "06000", "agglvl_code": "20", "own_code": "5",
+             "industry_code": "10", "qtrly_estabs": 1000, "month3_emplvl": 1_000_000,
+             "total_qtrly_wages": 10_000_000, "avg_wkly_wage": 2000, "qtr": 3, "year": 2024},
+        ])
+        call_command("load_qcew", f"--vintage={self.vintage.name}", "--state=06",
+                     "--boundary-type=both", verbosity=0)
+
+        rows = BLSQCEWAggregate.objects.filter(vintage=self.vintage)
+        # County + CBSA write; state-level row (agglvl=20) skips.
+        assert rows.count() == 2
+        boundary_types = sorted(r.boundary_type for r in rows)
+        assert boundary_types == ["cbsa", "county"]
+
+
+class TestLoadQCEWClassifyRow(TestCase):
+    """Direct unit tests for the _classify_row helper."""
+
+    def _classify(self, area_fips, agglvl_code):
+        from socialwarehouse.economic.management.commands.load_qcew import Command
+        return Command._classify_row(area_fips, agglvl_code)
+
+    def test_county_5_digit_agglvl_5x(self):
+        assert self._classify("06037", "50") == ("county", "06037")
+        assert self._classify("06037", "54") == ("county", "06037")
+
+    def test_cbsa_c_prefix_agglvl_4x(self):
+        assert self._classify("C3108", "40") == ("cbsa", "C3108")
+        assert self._classify("C3108", "45") == ("cbsa", "C3108")
+
+    def test_state_level_skipped(self):
+        assert self._classify("06000", "20") == (None, None)
+
+    def test_national_skipped(self):
+        assert self._classify("US000", "10") == (None, None)
+
+    def test_missing_agglvl_skipped(self):
+        # A row without agglvl_code can't be classified.
+        assert self._classify("06037", None) == (None, None)
+        assert self._classify("06037", "") == (None, None)
 
 
 class TestLoadQCEWValidation(LoadQCEWTestBase):
@@ -138,7 +233,7 @@ class TestLoadQCEWDryRun(LoadQCEWTestBase):
         from socialwarehouse.economic.models import BLSQCEWAggregate
 
         mock_load.return_value = self._df([
-            {"area_fips": "06037", "own_code": "5", "industry_code": "10",
+            {"area_fips": "06037", "agglvl_code": "50", "own_code": "5", "industry_code": "10",
              "qtrly_estabs": 1, "month3_emplvl": 1, "total_qtrly_wages": 1, "avg_wkly_wage": 1,
              "qtr": 3, "year": 2024},
         ])

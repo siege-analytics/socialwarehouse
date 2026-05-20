@@ -110,10 +110,14 @@ class Command(BaseCommand):
 
     @staticmethod
     def _extract_demographics(row):
+        # EDGE column names evolve across releases; check both forms.
+        # Use _first to avoid `or` short-circuit treating 0 as missing.
+        child_5_17 = _to_int(_first(row, "CHILD_5_17", "TOT_CHLD"))
+        in_poverty = _to_int(_first(row, "IPR_LT100_5_17", "IPR100_5_17"))
         return {
             "total_population": _to_int(row.get("TOT")),
-            "population_5_17": _to_int(row.get("CHILD_5_17") or row.get("TOT_CHLD")),
-            "population_under_5": _to_int(row.get("CHILD_LT5") or row.get("CHILD_UNDER_5")),
+            "population_5_17": child_5_17,
+            "population_under_5": _to_int(_first(row, "CHILD_LT5", "CHILD_UNDER_5")),
             "pop_5_17_white_nh": _to_int(row.get("WHITE_NH_5_17")),
             "pop_5_17_black_nh": _to_int(row.get("BLACK_NH_5_17")),
             "pop_5_17_asian_nh": _to_int(row.get("ASIAN_NH_5_17")),
@@ -121,18 +125,31 @@ class Command(BaseCommand):
             "pop_5_17_nhpi_nh": _to_int(row.get("NHPI_NH_5_17")),
             "pop_5_17_two_or_more_nh": _to_int(row.get("TWO_NH_5_17")),
             "pop_5_17_hispanic": _to_int(row.get("HISPANIC_5_17")),
-            "pop_5_17_in_poverty": _to_int(row.get("IPR_LT100_5_17") or row.get("IPR100_5_17")),
-            "pop_5_17_poverty_rate": _to_rate(
-                _to_int(row.get("IPR_LT100_5_17") or row.get("IPR100_5_17")),
-                _to_int(row.get("CHILD_5_17") or row.get("TOT_CHLD")),
-            ),
-            "households_total": _to_int(row.get("HH_TOT") or row.get("TOTAL_HH")),
+            "pop_5_17_in_poverty": in_poverty,
+            "pop_5_17_poverty_rate": _to_rate(in_poverty, child_5_17),
+            "households_total": _to_int(_first(row, "HH_TOT", "TOTAL_HH")),
             "households_with_school_age": _to_int(row.get("HH_WITH_CHILDREN")),
-            "median_household_income": _to_int(row.get("MEDIAN_HH_INC") or row.get("MEDIAN_HH_INCOME")),
+            "median_household_income": _to_int(_first(row, "MEDIAN_HH_INC", "MEDIAN_HH_INCOME")),
             "pop_5_17_english_at_home": _to_int(row.get("ENGLISH_5_17")),
             "pop_5_17_other_lang_at_home": _to_int(row.get("OTHER_LANG_5_17")),
             "pop_5_17_foreign_born": _to_int(row.get("FOREIGN_BORN_5_17")),
         }
+
+
+def _first(row, *keys):
+    """Return row[keys[0]] if present (not None / not NaN), else row[keys[1]], etc.
+
+    Distinct from `row.get(a) or row.get(b)` because that treats 0 as
+    missing — 0 is a valid Census count and must not fall through.
+    """
+    for k in keys:
+        v = row.get(k)
+        if v is None:
+            continue
+        if isinstance(v, float) and v != v:  # NaN
+            continue
+        return v
+    return None
 
 
 def _to_int(raw):

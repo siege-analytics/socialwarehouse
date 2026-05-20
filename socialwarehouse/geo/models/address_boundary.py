@@ -39,7 +39,7 @@ class AddressBoundaryPeriod(models.Model):
         related_name="boundary_periods",
     )
     vintage = models.ForeignKey(
-        "sw_geo.CensusVintageConfig",
+        "sw_geo.Vintage",
         on_delete=models.CASCADE,
         related_name="boundary_assignments",
     )
@@ -176,4 +176,4 @@ class AddressBoundaryPeriod(models.Model):
 
     def __str__(self):
         plan = f" [{self.redistricting_plan}]" if self.redistricting_plan else ""
-        return f"Address {self.address_id} @ {self.vintage.decade} Census{plan}"
+        return f"Address {self.address_id} @ {self.vintage}{plan}"

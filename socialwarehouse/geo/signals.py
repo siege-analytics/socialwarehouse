@@ -60,34 +60,15 @@ def address_cache_refresh_disabled():
 def _is_current_vintage(vintage, today=None):
     """Return True if `vintage`'s effective window contains today.
 
-    Bridges the two vintage shapes during the F11 step-2b → template-
-    readiness B transition:
-      - `CensusVintageConfig` (current): integer-year
-        ``effective_start`` and ``effective_end``. Convert each year
-        to a date window: `date(effective_start, 1, 1)` to
-        `date(effective_end + 1, 1, 1)` (half-open).
-      - Polymorphic `Vintage` (after B): date ``effective_from`` and
-        ``effective_to``; `effective_to=None` means "unreplaced."
-
-    Both shapes resolve to the same `(date, date_or_None)` window for
-    the comparison. When B lands and SW#202's follow-up updates this
-    module, the conversion branch goes away and only the Vintage-
-    style read remains.
+    Reads `vintage.effective_from` and `vintage.effective_to` directly.
+    `effective_to=None` means "unreplaced, still in effect."
     """
     if vintage is None:
         return False
     today = today or date.today()
-
-    if hasattr(vintage, "effective_from"):
-        eff_from = vintage.effective_from
-        eff_to = vintage.effective_to
-    else:
-        eff_from = date(vintage.effective_start, 1, 1)
-        eff_to = date(vintage.effective_end + 1, 1, 1)
-
-    if eff_from and eff_from > today:
+    if vintage.effective_from and vintage.effective_from > today:
         return False
-    if eff_to is not None and eff_to <= today:
+    if vintage.effective_to is not None and vintage.effective_to <= today:
         return False
     return True
 

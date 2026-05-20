@@ -111,6 +111,24 @@ class Vintage(models.Model):
         return True
 
 
+class CensusDecadalVintageManager(models.Manager):
+    """Custom manager carrying the legacy `for_year` lookup.
+
+    Preserves the `CensusVintageConfig.for_year(year)` API surface that
+    F11's helpers and `assign_boundaries` already depend on, but
+    resolves through the polymorphic Vintage table.
+    """
+
+    def for_year(self, year):
+        """Return the CensusDecadalVintage whose decade covers `year`.
+
+        2026 → decade 2020; 2018 → decade 2010; etc. Returns None for
+        years before any seeded decade.
+        """
+        decade = (year // 10) * 10
+        return self.filter(decade=decade).first()
+
+
 class CensusDecadalVintage(Vintage):
     """Decennial Census vintage (2010, 2020, ...).
 
@@ -122,6 +140,8 @@ class CensusDecadalVintage(Vintage):
         unique=True,
         help_text="Decade marker year, e.g. 2010, 2020, 2030.",
     )
+
+    objects = CensusDecadalVintageManager()
 
     class Meta:
         db_table = "sw_geo_vintage_census_decadal"

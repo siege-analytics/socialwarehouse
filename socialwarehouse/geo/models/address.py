@@ -24,10 +24,10 @@ from django.utils import timezone
 # date — TBD, currently expected ~2030-2032).
 #
 # This is INTENTIONALLY a module-level int constant, not a callable
-# default reading CensusVintageConfig — that path tangles with F11
-# (#100 — Address.census_year vs CensusVintageConfig dual source of
-# truth) and is being deferred until the dual-source-of-truth question
-# is settled. Tracked: F6 / SW#95.
+# default reading Vintage — that path tangles with F11 (#100 —
+# Address.census_year vs Vintage dual source of truth) and is being
+# deferred until the dual-source-of-truth question is settled.
+# Tracked: F6 / SW#95.
 DEFAULT_CENSUS_YEAR = 2020
 
 
@@ -403,9 +403,9 @@ class Address(models.Model):
         Restore the richer resolution once SU#527 ships and SW's SU pin
         bumps.
         """
-        from socialwarehouse.geo.models import CensusVintageConfig
+        from socialwarehouse.geo.models import CensusDecadalVintage
 
-        vintage = CensusVintageConfig.for_year(on_date.year)
+        vintage = CensusDecadalVintage.objects.for_year(on_date.year)
         if not vintage:
             return {}
 

@@ -33,6 +33,7 @@ KIND_BLS_QCEW = "bls-qcew"
 KIND_BEA_REGIONAL = "bea-regional"
 KIND_NCES_SCHOOL_YEAR = "nces-school-year"
 KIND_REDISTRICTING_PLAN = "redistricting-plan"
+KIND_IRS_SOI = "irs-soi"
 
 KIND_CHOICES = [
     (KIND_CENSUS_DECADAL, "Decennial Census"),
@@ -41,6 +42,7 @@ KIND_CHOICES = [
     (KIND_BEA_REGIONAL, "BEA Regional"),
     (KIND_NCES_SCHOOL_YEAR, "NCES School Year"),
     (KIND_REDISTRICTING_PLAN, "Redistricting Plan"),
+    (KIND_IRS_SOI, "IRS SOI Individual Income Tax Statistics"),
 ]
 
 
@@ -245,6 +247,25 @@ class NCESSchoolYearVintage(Vintage):
             self.kind = KIND_NCES_SCHOOL_YEAR
         if not self.name:
             self.name = f"{self.start_year}-{str(self.end_year)[-2:]}"
+        super().save(*args, **kwargs)
+
+
+class IRSSOIVintage(Vintage):
+    """IRS Statistics of Income (SOI) ZIP-code-level vintage. Annual,
+    published with ~2-year lag (TY2022 data released late 2024).
+    """
+
+    tax_year = models.PositiveSmallIntegerField(unique=True)
+
+    class Meta:
+        db_table = "sw_geo_vintage_irs_soi"
+        verbose_name = "IRS SOI Vintage"
+
+    def save(self, *args, **kwargs):
+        if not self.kind:
+            self.kind = KIND_IRS_SOI
+        if not self.name:
+            self.name = f"TY{self.tax_year}"
         super().save(*args, **kwargs)
 
 

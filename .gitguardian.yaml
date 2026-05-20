@@ -1,0 +1,24 @@
+# GitGuardian configuration: allowlist known-safe patterns.
+#
+# The entries below cover CI-only test fixtures (placeholder passwords
+# used inside GitHub Actions runners + ephemeral docker-compose dev
+# stacks) and one bash-parameter-expansion that GG misreads as a
+# password. Adding them keeps real findings visible in the dashboard
+# while removing the noise.
+#
+# Format reference: https://docs.gitguardian.com/ggshield-docs/config-file-format
+
+version: 2
+
+secret:
+  ignored-matches:
+    - name: "CI-only Postgres test password (swh_ci_pass)"
+      match: "swh_ci_pass"
+    - name: "CI .env placeholder Postgres password"
+      match: "POSTGRES_PASSWORD=ci_build"
+    - name: "CI .env placeholder Neo4j password"
+      match: "NEO4J_PASSWORD=ci_neo4j_12"
+    - name: "CI .env placeholder Django secret"
+      match: "DJANGO_SECRET_KEY=ci-secret"
+    - name: "docker-compose Neo4j auth: bash parameter expansion, not a secret"
+      match: "neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in .env}"

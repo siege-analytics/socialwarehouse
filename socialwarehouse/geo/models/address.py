@@ -23,11 +23,12 @@ from django.utils import timezone
 # TIGER vintage shifts (next bump: 2030 vintage's general-availability
 # date — TBD, currently expected ~2030-2032).
 #
-# SW#100 resolution: Address.census_year is canonical (denormalized
-# fast-read year hint) and is signal-maintained from census-decadal
-# ABP writes (see socialwarehouse.geo.signals._census_year_from_vintage).
-# ABP.vintage remains authoritative per-row; Address.census_year is
-# the cached "what decade is this Address's geocoding from" value.
+# SW#100 resolution (supersedes F6 / SW#95): Address.census_year is
+# canonical (denormalized fast-read year hint) and is signal-maintained
+# from census-decadal ABP writes (see
+# socialwarehouse.geo.signals._census_year_from_vintage). ABP.vintage
+# remains authoritative per-row; Address.census_year is the cached
+# "what decade is this Address's geocoding from" value.
 DEFAULT_CENSUS_YEAR = 2020
 
 

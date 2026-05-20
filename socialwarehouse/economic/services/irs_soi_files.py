@@ -4,7 +4,7 @@ Files-only path (no API key). The IRS publishes per-state CSV/XLSX
 files under irs.gov/statistics/soi-tax-stats-individual-income-tax-
 statistics-zip-code-data-soi each tax year.
 
-TODO(SU#535): lift this to siege_utilities (mirrors SU#533 / #534 for
+TODO(SU#539): lift this to siege_utilities (mirrors SU#533 / #534 for
 BLS QCEW / NCES). Kept SW-local until SU lands an IRS SOI helper.
 """
 

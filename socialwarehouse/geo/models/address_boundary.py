@@ -92,6 +92,18 @@ class AddressBoundaryPeriod(models.Model):
     cbsa_geoid = models.CharField(max_length=5, null=True, blank=True)
     school_district_geoid = models.CharField(max_length=7, null=True, blank=True)
 
+    # Template-readiness C medium-priority batch (SW#191).
+    # SU#535 tracks the upstream per-kind boundary models.
+    puma_geoid = models.CharField(max_length=7, null=True, blank=True)
+    urban_area_geoid = models.CharField(max_length=5, null=True, blank=True)
+    fire_district_geoid = models.CharField(max_length=10, null=True, blank=True)
+    water_district_geoid = models.CharField(max_length=10, null=True, blank=True)
+    hospital_district_geoid = models.CharField(max_length=10, null=True, blank=True)
+    library_district_geoid = models.CharField(max_length=10, null=True, blank=True)
+    cemetery_district_geoid = models.CharField(max_length=10, null=True, blank=True)
+    mosquito_district_geoid = models.CharField(max_length=10, null=True, blank=True)
+    other_special_district_geoid = models.CharField(max_length=10, null=True, blank=True)
+
     # siege_geo ForeignKeys (optional, for rich queries)
     siege_state = models.ForeignKey(
         "siege_geo.State", on_delete=models.SET_NULL,

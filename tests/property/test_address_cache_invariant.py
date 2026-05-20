@@ -45,10 +45,11 @@ _GEOID_ALPHABET = "0123456789"
 
 def _geoid_strategy():
     """Either an empty string (skip this type in the ABP row) or a short
-    digit-only token."""
+    digit-only token. Capped at 4 chars — that's `cd_geoid`'s column
+    width (the narrowest of the three tested types)."""
     return st.one_of(
         st.just(""),
-        st.text(alphabet=_GEOID_ALPHABET, min_size=2, max_size=5),
+        st.text(alphabet=_GEOID_ALPHABET, min_size=2, max_size=4),
     )
 
 
@@ -100,6 +101,11 @@ class TestCacheVsHelperInvariant(HypothesisTestCase):
                 sldl_geoid=w["sldl"],
                 sldu_geoid=w["sldu"],
                 context_date=base + timedelta(days=i),
+                # Vary plan id per write so the (address, vintage, plan)
+                # unique constraint (nulls_distinct=False) allows the
+                # full sequence. db_constraint isn't enforced on the FK
+                # so a fake int id is fine for the test.
+                redistricting_plan_id=i + 1,
                 assignment_method="SPATIAL_JOIN",
             )
 

@@ -180,6 +180,29 @@ class Address(models.Model):
         max_length=5, blank=True, default="",
         help_text="State Legislative District Upper GEOID (state FIPS + district)",
     )
+
+    # ── Template-readiness C high-priority batch (SW#191) ────────────────
+    # Cache fields for the four new boundary types unblocking D / E / F
+    # Phase 1. The boundary models themselves live in siege_utilities
+    # (tracked SU#532); these are pure string caches keyed by the same
+    # `{type}_geoid` convention as the existing nine types.
+    zcta_geoid = models.CharField(
+        max_length=5, blank=True, default="",
+        help_text="ZIP Code Tabulation Area (5-digit ZCTA, Census-derived). Distinct from postal `zip5`; see SW#207 Q3.",
+    )
+    place_geoid = models.CharField(
+        max_length=7, blank=True, default="",
+        help_text="Census Place GEOID (state FIPS + place FIPS).",
+    )
+    cbsa_geoid = models.CharField(
+        max_length=5, blank=True, default="",
+        help_text="Core-Based Statistical Area code (Census/OMB; MSA or micropolitan).",
+    )
+    school_district_geoid = models.CharField(
+        max_length=7, blank=True, default="",
+        help_text="NCES Local Education Agency (LEAID); for the district containing this address.",
+    )
+
     census_units_assigned_at = models.DateTimeField(null=True, blank=True)
 
     # ── Address construction timeline (TIGER ADDRFEAT) ──────────────────
@@ -340,6 +363,8 @@ class Address(models.Model):
     _BOUNDARY_TYPES = (
         "state", "county", "tract", "block_group", "block",
         "vtd", "cd", "sldl", "sldu",
+        # Template-readiness C high-priority batch (SW#191):
+        "zcta", "place", "cbsa", "school_district",
     )
 
     def boundary_history(self, boundary_type=None):

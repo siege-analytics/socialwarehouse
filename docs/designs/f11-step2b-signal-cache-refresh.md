@@ -1,7 +1,35 @@
 # F11 step 2b / SW#100 — Signal-driven cache refresh (design)
 
-**Status:** Design v1. No code. Awaiting maintainer answers to four
-questions before implementation.
+**Status:** Design v2. Q1 answered (2026-05-19). Q2-Q4 elaborated with concrete options + trade-offs per the maintainer's "please elaborate" requests.
+
+## Resolved decisions (v2)
+
+### Q1: "current" is defined by the vintage's effective window
+
+> "current should return a temporal window that includes now. Vintages, as such, should have an effective date from X to NOW(), meaning, unreplaced. This requires a lot of administrative upkeep, but it can be a management command run on a schedule to update."
+
+A vintage is **current** if its `[effective_from, effective_to)` window contains today, where `effective_to=NULL` means "unreplaced, still in effect." The signal recognizes "current" by examining the vintage's window — NOT by the ABP's `context_date` or write order.
+
+Handler check:
+
+```python
+def _is_current_vintage(vintage, today):
+    if vintage.effective_from and vintage.effective_from > today:
+        return False
+    if vintage.effective_to is not None and vintage.effective_to <= today:
+        return False
+    return True
+```
+
+An ABP write whose vintage's effective_to has already passed does NOT refresh the cache. This means backfilling historical (already-superseded) vintages doesn't pollute the cache — exactly the right semantic for the cache being "today's authoritative answer."
+
+**Administrative upkeep:** A new management command `seal_superseded_vintages` runs on a schedule (nightly is plenty) and sets `vintage.effective_to = today` for vintages superseded by a newer one of the same kind / domain. Today's "unreplaced" vintage is the one with `effective_to IS NULL`. This is the canonical write-side maintenance step the user named.
+
+This Q1 answer depends on Vintage having `effective_from / effective_to` fields. Sequencing options:
+- **(seq-a)** Land step-2b's implementation against the polymorphic Vintage from sub-issue B (#190). Cleaner; gated on B landing.
+- **(seq-b)** Land step-2b first against the existing `CensusVintageConfig.effective_start / effective_end` (integer years; convert to date with `date(year, 1, 1)` and `date(year + 1, 1, 1)` for the half-open semantics). Then migrate to polymorphic Vintage in B.
+
+(seq-a) is cleaner; (seq-b) decouples the schedules. The implementation PR picks based on B's landing cadence.
 
 ## Context
 
@@ -103,68 +131,224 @@ today even if the assignment isn't yet "in effect" — but that's
 arguably right, because the cache reflects "what assign_boundaries last
 believed," which IS the future-dated row once it's written.
 
-### Q2. Should the signal run during backfills?
+### Q2. Should the signal run during backfills? (elaboration)
 
-When `assign_boundaries` is run against a fresh DB or after a multi-
-year backfill, thousands of ABP writes land in succession. The signal
-would fire on every one, doing a per-write Address SELECT + UPDATE.
-Three options:
+The thing that makes backfill dangerous for the signal is not the volume per se — it's the per-write cost. With Q1 answered, the handler does:
+1. Check `_is_current_vintage(instance.vintage, today)`. Cheap (no DB).
+2. If yes, SELECT the Address row (one query).
+3. Diff cache fields vs incoming. In-memory.
+4. If any changed, UPDATE the Address row (one query).
 
-- **(a) Always fire.** Simplest. At backfill scale, this is N extra
-  UPDATEs per address (one per ABP write). Quadratic in the worst case
-  if backfill iterates addresses many times.
-- **(b) Skip during a context flag.** Add a `with disable_signal():`
-  context manager (or thread-local) that backfill commands can use to
-  suppress the signal. After the bulk write, the command calls a
-  separate `refresh_address_caches(qs)` function to do the update in
-  bulk.
-- **(c) Use `bulk_create` / `bulk_update` discipline.** Django signals
-  don't fire on `bulk_create` by default. If backfills are rewritten
-  to use bulk operations, the signal naturally doesn't run; backfills
-  then must explicitly call a refresh helper.
+At backfill cadence (thousands of ABP rows / second is plausible), that's thousands of extra Address SELECTs and UPDATEs per second. The handler is correct; it's just expensive.
 
-**My read: (b).** (a) is fine for ad-hoc writes but unacceptable at
-backfill scale. (c) requires rewriting backfill paths; (b) is a
-smaller change. The context manager is one extra line at the bulk-
-write site in `assign_boundaries` and similar.
+Three options for handling backfill, each with concrete shapes:
 
-### Q3. Should a signal-driven refresh fire DimGeography / downstream cascades?
+#### (a) Always fire — never suppress
 
-`Address.{type}_geoid` is read by several downstream paths (warehouse
-enrichment, geocode pipeline, analytics queries). When the cache
-updates, do we want a cascade — for example, to invalidate a
-warehouse-fact-table cache, or re-enqueue a downstream pipeline job?
+**Shape:** signal fires on every ABP write. No special case for backfills.
 
-Three options:
+**Pros:**
+- One code path. No "did the backfill remember to suppress?" failure mode.
+- Cache is always consistent with whatever was just written, transactionally.
 
-- **(a) No cascade.** Step 2b only updates the Address row. Downstream
-  consumers are responsible for re-reading at their own cadence.
-- **(b) Cascade to a single derived path.** Pick one (e.g.,
-  `DimGeography`) and add a follow-up signal there.
-- **(c) Generic event-bus shape.** Emit an "address-boundary-changed"
-  domain event; downstream consumers subscribe.
+**Cons:**
+- Backfills do 2N extra queries per address (one SELECT + one UPDATE per ABP write, even for non-current vintages, because the handler has to check vintage's effective range).
+- Actually: with Q1's `_is_current_vintage` check, backfills of HISTORICAL vintages skip the SELECT — `_is_current_vintage` short-circuits before hitting the DB. So the cost is only for current-vintage writes. That's not bad.
 
-**My read: (a) for this PR; (b) or (c) as separate future tickets.**
-The signal's job is the cache-coherence invariant. Downstream cascades
-are a different concern that shouldn't be tangled into this PR.
+**When (a) is right:** if 95%+ of backfilled ABP writes are historical (already-superseded vintages), (a) is effectively free.
 
-### Q4. How do we test it?
+#### (b) Context-manager-suppressed during bulk
 
-Unit tests at the signal level are straightforward (create ABP, assert
-Address row's cache updated). The harder question is: do we want a
-*property-style* test that asserts the cache and the helpers agree
-after a sequence of writes?
+**Shape:**
 
-- **(a) Unit tests only.** Pin the behavior on a few representative
-  cases.
-- **(b) Property test.** Run a randomized sequence of ABP writes;
-  after each one, assert
-  `Address.current_boundaries()[t].{t}_geoid == Address.{t}_geoid`
-  for every type the address has rows for.
+```python
+# socialwarehouse/geo/signals.py
+import contextlib
+import threading
 
-**My read: (a) for this PR; (b) is a nice-to-have follow-up.** Unit
-tests cover the contract; property test would catch subtler ordering
-issues but is a non-trivial test-infrastructure addition.
+_signal_disabled = threading.local()
+
+@contextlib.contextmanager
+def address_cache_refresh_disabled():
+    """Temporarily suppress the ABP-post_save signal for cache refresh.
+    
+    Use inside bulk-write contexts where the caller will explicitly
+    invoke `refresh_address_caches(...)` after the bulk write completes.
+    """
+    _signal_disabled.value = True
+    try:
+        yield
+    finally:
+        _signal_disabled.value = False
+
+@receiver(post_save, sender=AddressBoundaryPeriod)
+def refresh_address_cache_on_abp_write(sender, instance, **kwargs):
+    if getattr(_signal_disabled, "value", False):
+        return
+    # ... normal handler logic ...
+
+# Bulk caller (assign_boundaries):
+with address_cache_refresh_disabled():
+    AddressBoundaryPeriod.objects.bulk_create(rows)
+refresh_address_caches(Address.objects.filter(pk__in=address_ids))
+```
+
+**Pros:**
+- Backfills explicitly opt out. The bulk-write site documents its own behavior.
+- `refresh_address_caches` can be a single batched query (one UPDATE per address with all cache fields set in one go).
+
+**Cons:**
+- Backfill paths must remember to suppress + refresh. If they forget the refresh, cache drifts.
+- Thread-local state adds a small footgun in concurrent contexts (Celery worker pools, etc.) — the context manager is per-thread, so concurrent backfills in different threads are isolated, but a poorly-timed signal from a sibling code path inside the same thread would also be suppressed.
+
+#### (c) Rely on bulk_create's natural signal-skipping
+
+**Shape:** Django's `bulk_create()` does NOT fire post_save signals by default. If backfill paths use `bulk_create`, the signal naturally doesn't fire.
+
+**Pros:**
+- Zero code in the signal handler / SW; the suppression is just an artifact of Django's bulk-API behavior.
+- No thread-local state.
+
+**Cons:**
+- Backfill paths must use `bulk_create`. The current `assign_boundaries.py` uses per-row `update_or_create` (line 243+); converting that to a bulk-API call is a non-trivial refactor.
+- Misses ABP writes from callers that DO use per-row writes for legitimate reasons (e.g., partial reassignment on the order-of-a-few-addresses; the signal SHOULD fire there).
+- Behavior is silently coupled to which Django ORM call the caller picks. A future caller using `.save()` per-row inside a "bulk" job would fire the signal without realizing it.
+
+#### Recommendation
+
+**(b) context-manager-suppressed.** Reasoning:
+- (a) is acceptable IF most backfilled vintages are historical; but the implementation is no simpler than (b) once `_is_current_vintage` is in the handler. (b) gives explicit control for the actual-current-vintage-bulk-load case (e.g., the 2030 census drop).
+- (c) couples behavior to Django API choices in callers — fragile.
+- (b) is explicit, scoped to known bulk-write sites, and the `refresh_address_caches(qs)` helper centralizes the post-bulk update logic so it can be tested.
+
+If you disagree, the next-most-defensible is (a) — accept the per-write cost as the simplicity payback.
+
+### Q3. Should a signal-driven refresh fire downstream cascades? (elaboration)
+
+When an Address's cache fields update, several downstream things become potentially stale. Concretely, what's downstream of `Address.cd_geoid`:
+
+1. **Warehouse fact tables.** `FactRedistrictingPlan`, `FactDonor`, etc. — anything that joined an Address to a CD at the time of insertion.
+2. **DimGeography rollups.** If DimGeography records aggregate per-CD-per-vintage stats, an address moving CDs changes those rollups.
+3. **Materialized views / cached queries.** Any "addresses in CD-12" materialized view would need to drop the now-not-in-CD-12 address.
+4. **Downstream pipeline jobs.** Voter outreach lists, geographic enrichment, etc.
+5. **External-facing API responses.** Any cached `/api/address/<id>/boundaries` response.
+
+Three options for handling this, each with concrete shapes:
+
+#### (a) No cascade in this PR
+
+**Shape:** the signal handler updates only `Address.{type}_geoid`. Nothing else fires.
+
+**Consequence:** downstream consumers are responsible for re-reading at their own cadence. Fact tables that joined-and-cached the geoid at insertion stay stale until they're rebuilt; materialized views go stale until the next refresh; API caches go stale until their TTL expires.
+
+**Pros:**
+- Tightly scoped PR. The cache-coherence invariant is achievable AND testable in isolation.
+- No coupling to specific downstream paths; each can adopt its own refresh strategy.
+
+**Cons:**
+- Stale downstream state until each consumer is independently fixed. Discovered as "weird query result" rather than "well-documented invariant."
+- Pushes the same problem (cache vs source-of-truth) one layer out. We solve it for Address; we don't solve it for FactRedistrictingPlan.
+
+#### (b) Cascade to a single derived path (e.g., DimGeography)
+
+**Shape:** add ONE more signal handler that listens for `Address.cd_geoid` (etc.) changes via Django's `post_save` on `Address` with `update_fields` inspection. When triggered, it enqueues a `refresh_dim_geography_for_address(address_id)` task (Celery or sync).
+
+**Pros:**
+- Solves the most-visible downstream-staleness problem (DimGeography is the warehouse's central reporting surface).
+- Pattern is repeatable: each future downstream gets its own handler.
+
+**Cons:**
+- Picks a winner. DimGeography is the most-visible BUT not the only consumer. The "if you didn't get a handler, you're on your own" pattern is uncomfortable.
+- Adds Celery / async dependency to F11's signal path. Step-2b's PR becomes "signal + Celery task + DimGeography refresh logic" — three things to test together.
+
+#### (c) Generic event-bus shape
+
+**Shape:** define a domain event (Python dataclass, signal, or `django-signal-disabler`-style event):
+
+```python
+class AddressBoundaryChangedEvent:
+    address_id: int
+    changed_boundary_types: list[str]
+    old_values: dict[str, str]
+    new_values: dict[str, str]
+    timestamp: datetime
+
+# Step-2b emits the event after the cache update.
+# Downstream consumers subscribe to the event in their own apps.
+```
+
+**Pros:**
+- Decoupled. Step-2b's PR ships the cache invariant + the event emission. Each downstream consumer ships its own subscriber in its own PR.
+- Future-proof: new downstream paths just subscribe; no F11 changes needed.
+
+**Cons:**
+- Bigger architectural decision. Picking the event-bus mechanism (Django signals, Celery messages, custom registry) shapes how every future cross-app coupling works.
+- Step-2b becomes the place where SW commits to an event-bus pattern. That's a real decision that shouldn't be made inside an F11 step-2b PR.
+
+#### Recommendation
+
+**(a) for step 2b's PR; file follow-up tickets for the downstream cascade decision.** Reasoning:
+- (b) and (c) both make step-2b's PR substantially larger AND introduce architectural decisions that aren't F11's responsibility.
+- (a) ships the cache-coherence invariant cleanly. Whichever downstream cascade strategy lands later can build on top of the now-correct Address.cache.
+- File a parent follow-up ticket: "Downstream cascade strategy after F11 step-2b lands" — that ticket explicitly picks between (b) and (c) and is sub-divided per-downstream-consumer.
+
+If you want (b) instead, the implementation shape works but the PR doubles in size and Celery enters the dependency.
+
+### Q4. How do we test it? (elaboration)
+
+Two layers of test, each with concrete shapes:
+
+#### (a) Unit tests on the signal handler
+
+**Shape:** TestCase-style tests that exercise the signal directly. Examples:
+
+- `test_current_vintage_abp_write_updates_cache`: create ABP with current-vintage; assert `Address.cd_geoid` matches after save.
+- `test_superseded_vintage_abp_write_does_not_update_cache`: create ABP with a vintage whose effective_to is in the past; assert cache unchanged.
+- `test_unchanged_value_no_update`: write an ABP whose cache-fields match the current Address state; assert no extra UPDATE fires (mock or instrument the DB to count writes).
+- `test_disable_context_manager_suppresses_signal`: write ABP inside `with address_cache_refresh_disabled():`; assert cache unchanged; assert explicit `refresh_address_caches(qs)` does update.
+- `test_raw_load_skips_signal`: load ABP via fixture (raw=True); assert cache unchanged.
+- `test_partial_geoid_only_updates_present_fields`: ABP row has cd_geoid but null sldl_geoid; assert only cd cache field updates, sldl cache untouched.
+
+**Pros:** pins each handler branch explicitly. Easy to read; failures point at the exact branch.
+
+**Cons:** tests the handler's contract, not the cache-vs-helper invariant. If the handler "works" but doesn't match what `current_boundaries()` would compute, unit tests won't catch the divergence.
+
+#### (b) Property test on the cache-vs-helper invariant
+
+**Shape:** with hypothesis (or a hand-rolled randomizer), generate sequences of ABP writes; after each, assert the invariant:
+
+```python
+@given(abp_write_sequences())
+def test_cache_matches_helper_after_any_write_sequence(writes):
+    addr = Address.objects.create(...)
+    for write in writes:
+        AddressBoundaryPeriod.objects.create(address=addr, **write)
+        addr.refresh_from_db()
+        helper_result = addr.current_boundaries()
+        for btype in Address._BOUNDARY_TYPES:
+            cached = getattr(addr, f"{btype}_geoid")
+            from_helper = helper_result.get(btype)
+            helper_geoid = getattr(from_helper, f"{btype}_geoid", "") if from_helper else ""
+            assert cached == helper_geoid, (
+                f"Cache/helper mismatch for {btype} after writes: "
+                f"cache={cached!r}, helper={helper_geoid!r}"
+            )
+```
+
+**Pros:** catches the actual invariant (the user-visible contract). Catches subtle ordering issues — out-of-order ABP writes, partial-vintage rows, etc. — that hand-picked unit tests would miss.
+
+**Cons:** requires hypothesis as a test dependency (already in SW? check). Test failures can be hard to reduce to a minimal reproducer; hypothesis's shrinking helps but isn't free. Property tests are slower than unit tests.
+
+#### Recommendation
+
+**Ship (a) in step-2b's PR. File (b) as a follow-up.**
+
+Reasoning:
+- (a) covers every named branch in the handler. That's the "did I write the handler correctly?" question.
+- (b) covers the "is the contract right?" question. It's higher value but more invasive — hypothesis dependency, longer test runs, more shrinking-failure noise.
+- A reasonable middle ground: ship one hand-rolled multi-write integration test in (a)'s suite (the "ten-write sequence" case) that exercises the most-likely real-world pattern without going full property-test. That covers 80% of (b)'s value without the hypothesis dependency.
+
+If you want (b), the follow-up's scope is "add hypothesis to SW dev deps; convert the ten-write integration test from (a) into a property test; remove the hand-rolled version."
 
 ## What this PR delivers
 

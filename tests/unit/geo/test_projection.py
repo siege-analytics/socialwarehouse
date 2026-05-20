@@ -1,4 +1,6 @@
-"""Unit tests for the per-region projected-CRS lookup (M5 / SW#149)."""
+"""Unit tests for the per-region projected-CRS lookup (M5 / SW#149) and the
+SW#185 cross-region opt-in (EPSG:6933 for commensurable areas across regions).
+"""
 
 import pytest
 
@@ -6,6 +8,7 @@ from socialwarehouse.geo.projection import (
     EPSG_GLOBAL_EQUAL_AREA,
     area_srid_for_geoid,
     area_srid_for_state_fips,
+    cross_region_srid,
 )
 
 
@@ -45,3 +48,29 @@ def test_area_srid_for_geoid_uses_two_char_prefix():
 def test_area_srid_for_geoid_empty_falls_back_to_global():
     assert area_srid_for_geoid("") == EPSG_GLOBAL_EQUAL_AREA
     assert area_srid_for_geoid(None) == EPSG_GLOBAL_EQUAL_AREA
+
+
+# ---------------------------------------------------------------------------
+# SW#185: cross-region opt-in
+# ---------------------------------------------------------------------------
+
+
+def test_cross_region_srid_constant():
+    assert cross_region_srid() == EPSG_GLOBAL_EQUAL_AREA
+
+
+@pytest.mark.parametrize(
+    "state_fips",
+    ["06", "48", "02", "15", "72"],
+)
+def test_cross_region_kwarg_overrides_region_srid(state_fips):
+    """When cross_region=True, every input maps to 6933 — that's the
+    whole point: commensurable areas across regions.
+    """
+    assert area_srid_for_state_fips(state_fips, cross_region=True) == EPSG_GLOBAL_EQUAL_AREA
+    assert area_srid_for_geoid(state_fips + "075", cross_region=True) == EPSG_GLOBAL_EQUAL_AREA
+
+
+def test_cross_region_false_is_default_behavior():
+    assert area_srid_for_state_fips("06") == area_srid_for_state_fips("06", cross_region=False)
+    assert area_srid_for_geoid("06075") == area_srid_for_geoid("06075", cross_region=False)

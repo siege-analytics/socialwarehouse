@@ -12,9 +12,9 @@ mid-cycle. Static boundaries (county, tract) stay the same; political
 boundaries (CD, SLDL, SLDU) differ by active plan.
 
 Example:
-    address=123 Main St, vintage=2020, plan=AL Enacted       → CD-07
-    address=123 Main St, vintage=2020, plan=Milligan Interim  → CD-02
-    address=123 Main St, vintage=2020, plan=Milligan Final    → CD-02
+    address=123 Main St, vintage=2020, plan=AL Enacted       -> CD-07
+    address=123 Main St, vintage=2020, plan=Milligan Interim  -> CD-02
+    address=123 Main St, vintage=2020, plan=Milligan Final    -> CD-02
 """
 
 from django.db import models
@@ -39,7 +39,7 @@ class AddressBoundaryPeriod(models.Model):
         related_name="boundary_periods",
     )
     vintage = models.ForeignKey(
-        "sw_geo.CensusVintageConfig",
+        "sw_geo.Vintage",
         on_delete=models.CASCADE,
         related_name="boundary_assignments",
     )
@@ -83,6 +83,26 @@ class AddressBoundaryPeriod(models.Model):
     cd_geoid = models.CharField(max_length=4, null=True, blank=True)
     sldl_geoid = models.CharField(max_length=5, null=True, blank=True)
     sldu_geoid = models.CharField(max_length=5, null=True, blank=True)
+
+    # Template-readiness C high-priority batch (SW#191): new boundary types.
+    # Static (non-redistricting) boundaries; populated by assign_boundaries
+    # once SU#532 ships the corresponding boundary models.
+    zcta_geoid = models.CharField(max_length=5, null=True, blank=True)
+    place_geoid = models.CharField(max_length=7, null=True, blank=True)
+    cbsa_geoid = models.CharField(max_length=5, null=True, blank=True)
+    school_district_geoid = models.CharField(max_length=7, null=True, blank=True)
+
+    # Template-readiness C medium-priority batch (SW#191).
+    # SU#535 tracks the upstream per-kind boundary models.
+    puma_geoid = models.CharField(max_length=7, null=True, blank=True)
+    urban_area_geoid = models.CharField(max_length=5, null=True, blank=True)
+    fire_district_geoid = models.CharField(max_length=10, null=True, blank=True)
+    water_district_geoid = models.CharField(max_length=10, null=True, blank=True)
+    hospital_district_geoid = models.CharField(max_length=10, null=True, blank=True)
+    library_district_geoid = models.CharField(max_length=10, null=True, blank=True)
+    cemetery_district_geoid = models.CharField(max_length=10, null=True, blank=True)
+    mosquito_district_geoid = models.CharField(max_length=10, null=True, blank=True)
+    other_special_district_geoid = models.CharField(max_length=10, null=True, blank=True)
 
     # siege_geo ForeignKeys (optional, for rich queries)
     siege_state = models.ForeignKey(
@@ -176,4 +196,4 @@ class AddressBoundaryPeriod(models.Model):
 
     def __str__(self):
         plan = f" [{self.redistricting_plan}]" if self.redistricting_plan else ""
-        return f"Address {self.address_id} @ {self.vintage.decade} Census{plan}"
+        return f"Address {self.address_id} @ {self.vintage}{plan}"

@@ -48,7 +48,8 @@ class TestAddressModel(TestCase):
         )
         assert addr.state_geoid == "06"
         assert addr.county_geoid == "06037"
-        assert addr.tract_geoid is None
+        # Post-F3/SW#92: CharField default is "" not None.
+        assert addr.tract_geoid == ""
 
     def test_backwards_compat_alias(self):
         from socialwarehouse.geo.models import United_States_Address, Address
@@ -56,52 +57,43 @@ class TestAddressModel(TestCase):
         assert United_States_Address is Address
 
 
-class TestCensusVintageConfig(TestCase):
-    """Test CensusVintageConfig model."""
+class TestCensusDecadalVintageManager(TestCase):
+    """Test the for_year manager method preserved from CensusVintageConfig.
 
-    def test_seed_defaults(self):
-        from socialwarehouse.geo.models import CensusVintageConfig
+    The seed of 2010/2020 decadal vintages is performed by migration 0004
+    (seed_known_vintages); these tests verify the lookup against that
+    seeded state.
+    """
 
-        created = CensusVintageConfig.seed_defaults()
-        assert created == 4
-        # Idempotent
-        created_again = CensusVintageConfig.seed_defaults()
-        assert created_again == 0
+    def test_for_year_2018_returns_2010_decade(self):
+        from socialwarehouse.geo.models import CensusDecadalVintage
 
-    def test_for_year(self):
-        from socialwarehouse.geo.models import CensusVintageConfig
+        v = CensusDecadalVintage.objects.for_year(2018)
+        assert v is not None
+        assert v.decade == 2010
 
-        CensusVintageConfig.seed_defaults()
+    def test_for_year_2022_returns_2020_decade(self):
+        from socialwarehouse.geo.models import CensusDecadalVintage
 
-        v2018 = CensusVintageConfig.for_year(2018)
-        assert v2018 is not None
-        assert v2018.decade == 2010
+        v = CensusDecadalVintage.objects.for_year(2022)
+        assert v is not None
+        assert v.decade == 2020
 
-        v2022 = CensusVintageConfig.for_year(2022)
-        assert v2022 is not None
-        assert v2022.decade == 2020
+    def test_for_year_before_seeded_decades_returns_none(self):
+        from socialwarehouse.geo.models import CensusDecadalVintage
 
-        # 1990 is not active by default
-        v1995 = CensusVintageConfig.for_year(1995)
-        assert v1995 is None
-
-    def test_str(self):
-        from socialwarehouse.geo.models import CensusVintageConfig
-
-        CensusVintageConfig.seed_defaults()
-        v = CensusVintageConfig.objects.get(decade=2020)
-        assert "2020" in str(v)
-        assert "2029" in str(v)
+        # 1995 → decade 1990, not seeded.
+        v = CensusDecadalVintage.objects.for_year(1995)
+        assert v is None
 
 
 class TestAddressBoundaryPeriod(TestCase):
-    """Test AddressBoundaryPeriod model."""
+    """Test AddressBoundaryPeriod model against the polymorphic Vintage."""
 
     def test_create_boundary_period(self):
-        from socialwarehouse.geo.models import Address, AddressBoundaryPeriod, CensusVintageConfig
+        from socialwarehouse.geo.models import Address, AddressBoundaryPeriod, CensusDecadalVintage
 
-        CensusVintageConfig.seed_defaults()
-        vintage = CensusVintageConfig.objects.get(decade=2020)
+        vintage = CensusDecadalVintage.objects.get(decade=2020)
 
         addr = Address.objects.create(
             primary_number="456",
@@ -119,15 +111,16 @@ class TestAddressBoundaryPeriod(TestCase):
             assignment_method="SPATIAL_JOIN",
         )
 
-        assert str(abp) == f"Address {addr.pk} @ 2020 Census"
+        # __str__ uses Vintage.__str__ which is "kind:name".
+        assert f"Address {addr.pk}" in str(abp)
+        assert "census-decadal:2020" in str(abp)
         assert abp.cd_geoid == "0634"
 
     def test_unique_together(self):
         from django.db import IntegrityError
-        from socialwarehouse.geo.models import Address, AddressBoundaryPeriod, CensusVintageConfig
+        from socialwarehouse.geo.models import Address, AddressBoundaryPeriod, CensusDecadalVintage
 
-        CensusVintageConfig.seed_defaults()
-        vintage = CensusVintageConfig.objects.get(decade=2020)
+        vintage = CensusDecadalVintage.objects.get(decade=2020)
         addr = Address.objects.create(state_abbreviation="TX")
 
         AddressBoundaryPeriod.objects.create(address=addr, vintage=vintage)

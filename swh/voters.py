@@ -22,10 +22,12 @@ Example usage:
 
 from __future__ import annotations
 
+import csv
 import logging
+import re
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import geopandas as gpd
 import pandas as pd
@@ -47,6 +49,57 @@ DEFAULT_COLUMNS = {
     "sd": "vb_vf_sd",
     "hd": "vb_vf_hd",
 }
+
+# TargetSmart ID columns that pandas would otherwise auto-type as float64,
+# losing leading zeros on precinct codes, county FIPS, and district numbers.
+# Pass this dict (or a superset) as the `dtype` kwarg to load_voter_file or
+# voter_file_to_geodataframe when reading TargetSmart-format files.
+# Non-TargetSmart files: build your own dtype dict per the file's ID columns.
+# (S2 / SW#132 fix; recipe documented in docs/entities/swh_voters.md.)
+TARGETSMART_DEFAULT_DTYPES: dict[str, type] = {
+    "vb_vf_national_precinct_code": str,
+    "vb_vf_cd": str,
+    "vb_vf_sd": str,
+    "vb_vf_hd": str,
+    "vb_tsmart_county_name": str,
+    "vb_tsmart_county_code": str,
+    "vb_tsmart_zip": str,
+    "zip5": str,
+    "zip9": str,
+    "county_fips": str,
+}
+
+# utf-8-sig handles the BOM that TargetSmart and many voter-file exports
+# include. Plain "utf-8" decodes BOM bytes as part of the first column name,
+# producing a column like "﻿id". utf-8-sig is forward-compatible for
+# non-BOM files (just consumes the optional BOM if present).
+DEFAULT_CSV_ENCODING = "utf-8-sig"
+
+
+# Strict PostgreSQL identifier pattern: must start with a letter or
+# underscore, then letters / digits / underscores. Bare ASCII only —
+# we reject quoted-only identifiers (with spaces, hyphens, dots, etc.)
+# rather than try to escape them. Schema and table names passed to
+# load_voter_file flow into raw DDL (LOCK / DROP / ALTER TABLE) where
+# SQLAlchemy bind parameters do not apply; injection here would be a
+# direct vector. (S6 / SW#136)
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_identifier(value: str, kind: str) -> str:
+    """Validate a SQL identifier is bare ASCII and safe to interpolate.
+
+    Returns the value double-quoted for PostgreSQL ("foo") so case is
+    preserved in DDL. Raises ValueError if the input doesn't match the
+    strict identifier pattern.
+    """
+    if not isinstance(value, str) or not _IDENT_RE.match(value):
+        raise ValueError(
+            f"Invalid {kind} identifier: {value!r}. Must match "
+            f"[A-Za-z_][A-Za-z0-9_]* (bare ASCII, no spaces/hyphens/dots). "
+            f"(S6 / SW#136)"
+        )
+    return f'"{value}"'
 
 
 def _coerce_and_build_geometry(
@@ -102,6 +155,10 @@ def load_voter_file(
     chunk_size: int = 50_000,
     crs: int = 4326,
     schema: str = "public",
+    encoding: str = DEFAULT_CSV_ENCODING,
+    dtype: Optional[dict[str, Any]] = None,
+    quoting: int = csv.QUOTE_MINIMAL,
+    quotechar: str = '"',
 ) -> int:
     """Load a voter file CSV into PostGIS as a spatial table.
 
@@ -122,38 +179,95 @@ def load_voter_file(
         chunk_size: Number of rows per chunk for memory-efficient loading.
         crs: Coordinate reference system EPSG code. Defaults to 4326.
         schema: PostGIS schema. Defaults to "public".
+        encoding: CSV encoding. Defaults to utf-8-sig (handles BOM that
+            TargetSmart and many voter-file exports include).
+        dtype: Per-column dtype dict passed to pandas. For TargetSmart
+            files, pass TARGETSMART_DEFAULT_DTYPES (or a superset) to
+            preserve leading zeros on precinct/FIPS/district ID columns;
+            without this, pandas auto-types those as float64 and corrupts
+            the IDs. (S2 / SW#132)
+        quoting: csv quoting style; defaults to csv.QUOTE_MINIMAL.
+        quotechar: csv quotechar; defaults to '\"'.
 
     Returns:
         Total number of rows loaded.
 
     Example:
+        >>> from swh.voters import load_voter_file, TARGETSMART_DEFAULT_DTYPES
         >>> count = load_voter_file(
         ...     "/data/inputs/TX_voters.csv",
         ...     "voters_tx",
         ...     chunk_size=100_000,
+        ...     dtype=TARGETSMART_DEFAULT_DTYPES,
         ... )
         >>> print(f"Loaded {count} voters")
         Loaded 15234567 voters
     """
-    from siege_utilities.connectors import PostGISConnector
-    from sqlalchemy import text
+    from siege_utilities.geo.spatial_transformations import PostGISConnector
+    from sqlalchemy import inspect as sa_inspect, text
+
+    # Validate identifiers BEFORE any I/O so a bad table/schema name
+    # fails fast (not after parsing the first chunk). (S6 / SW#136)
+    schema_q = _validate_identifier(schema, "schema")
+    table_q = _validate_identifier(table_name, "table_name")
 
     filepath = Path(filepath)
     conn_str = connection_string or settings.database.connection_string
     connector = PostGISConnector(conn_str)
 
-    # Use a staging table for atomicity
+    # Use a staging table for atomicity. The staging name is built from
+    # an already-validated table_name plus a hex UUID suffix — also
+    # safe under _IDENT_RE.
     staging_table = f"_staging_{table_name}_{uuid.uuid4().hex[:8]}"
+    staging_q = _validate_identifier(staging_table, "staging_table")
 
     total_rows = 0
     first_chunk = True
+    # Column-shape of the first non-empty chunk. After SU#517 (PostGISConnector
+    # uses gpd.GeoDataFrame.to_postgis) columns are written by NAME against
+    # the staging table's schema — a chunk with a different column set
+    # would either raise (extra columns) or NaN-fill (missing columns) per
+    # pandas to_sql semantics. We pre-check ourselves and refuse to upload
+    # a chunk with drifted columns so the misalignment never reaches the
+    # database. Pre-S4-aware behavior would have silently appended whatever
+    # geom was present and dropped tabular columns; SU#517 closed the column-
+    # loss vector, and this check closes the chunk-drift one above it.
+    # (S4 / SW#134; depends on SU#517 having merged.)
+    first_chunk_columns: list[str] | None = None
 
     try:
-        for chunk in pd.read_csv(filepath, chunksize=chunk_size):
+        for chunk in pd.read_csv(
+            filepath,
+            chunksize=chunk_size,
+            encoding=encoding,
+            dtype=dtype,
+            quoting=quoting,
+            quotechar=quotechar,
+        ):
             gdf = _coerce_and_build_geometry(chunk, longitude_col, latitude_col, crs)
 
             if len(gdf) == 0:
                 continue
+
+            if first_chunk_columns is None:
+                first_chunk_columns = list(gdf.columns)
+            else:
+                current_columns = list(gdf.columns)
+                if current_columns != first_chunk_columns:
+                    added = set(current_columns) - set(first_chunk_columns)
+                    removed = set(first_chunk_columns) - set(current_columns)
+                    raise ValueError(
+                        f"Chunk column-shape drift detected mid-file at row "
+                        f"~{total_rows + 1}: "
+                        f"added={sorted(added) or '∅'}, "
+                        f"removed={sorted(removed) or '∅'}. "
+                        f"Pre-SU#517 this drift was masked by the geom-only "
+                        f"write path; post-SU#517 columns are written by name "
+                        f"and would either raise or NaN-fill silently. "
+                        f"Staging table will be cleaned up by the exception "
+                        f"handler. Fix the source CSV (consistent header) "
+                        f"or split the load. (S4 / SW#134)"
+                    )
 
             # Upload: replace on first chunk, append thereafter
             if_exists = "replace" if first_chunk else "append"
@@ -163,10 +277,19 @@ def load_voter_file(
             first_chunk = False
             logger.info("Loaded chunk: %d rows (total: %d)", len(gdf), total_rows)
 
-        # Atomic swap: drop target, rename staging -> target
+        # Atomic swap: drop target, rename staging -> target.
+        # Acquire ACCESS EXCLUSIVE lock on the target table BEFORE the DROP
+        # so concurrent readers complete or block here (cleaner than relying
+        # on implicit DDL-acquired locks). LOCK requires the table to exist;
+        # the inspect.has_table pre-check guards first-ever loads where no
+        # target exists yet. (S3 / SW#133)
+        inspector = sa_inspect(connector.engine)
+        target_exists = inspector.has_table(table_name, schema=schema)
         with connector.engine.begin() as conn:
-            conn.execute(text(f"DROP TABLE IF EXISTS {schema}.{table_name}"))
-            conn.execute(text(f"ALTER TABLE {schema}.{staging_table} RENAME TO {table_name}"))
+            if target_exists:
+                conn.execute(text(f"LOCK TABLE {schema_q}.{table_q} IN ACCESS EXCLUSIVE MODE"))
+            conn.execute(text(f"DROP TABLE IF EXISTS {schema_q}.{table_q}"))
+            conn.execute(text(f"ALTER TABLE {schema_q}.{staging_q} RENAME TO {table_q}"))
 
         logger.info("Finished loading %s -> %s (%d total rows)", filepath.name, table_name, total_rows)
 
@@ -175,9 +298,17 @@ def load_voter_file(
         logger.exception("Failed to load %s — cleaning up staging table", filepath.name)
         try:
             with connector.engine.begin() as conn:
-                conn.execute(text(f"DROP TABLE IF EXISTS {schema}.{staging_table}"))
+                conn.execute(text(f"DROP TABLE IF EXISTS {schema_q}.{staging_q}"))
         except Exception:
-            logger.warning("Could not clean up staging table %s", staging_table)
+            # Include the SQL the operator should run manually to clean
+            # up the orphan. Without this hint, the only signal an operator
+            # gets is the table name — they have to remember/look up the
+            # schema and the DROP syntax to finish the cleanup. (S8 / SW#138)
+            logger.warning(
+                "Could not clean up staging table %s.%s. "
+                "Run manually: DROP TABLE IF EXISTS %s.%s;",
+                schema, staging_table, schema, staging_table,
+            )
         raise
 
     return total_rows
@@ -188,6 +319,10 @@ def voter_file_to_geodataframe(
     longitude_col: str = DEFAULT_COLUMNS["longitude"],
     latitude_col: str = DEFAULT_COLUMNS["latitude"],
     crs: int = 4326,
+    encoding: str = DEFAULT_CSV_ENCODING,
+    dtype: Optional[dict[str, Any]] = None,
+    quoting: int = csv.QUOTE_MINIMAL,
+    quotechar: str = '"',
 ) -> gpd.GeoDataFrame:
     """Read a voter file CSV into a GeoDataFrame (in-memory, no PostGIS).
 
@@ -198,13 +333,26 @@ def voter_file_to_geodataframe(
         longitude_col: Column name for longitude.
         latitude_col: Column name for latitude.
         crs: Coordinate reference system EPSG code.
+        encoding / dtype / quoting / quotechar: pandas read_csv knobs.
+            See load_voter_file for guidance; for TargetSmart files pass
+            TARGETSMART_DEFAULT_DTYPES via dtype. (S2 / SW#132)
 
     Returns:
         GeoDataFrame with Point geometry column.
 
     Example:
-        >>> gdf = voter_file_to_geodataframe("/data/inputs/TX_voters.csv")
+        >>> from swh.voters import voter_file_to_geodataframe, TARGETSMART_DEFAULT_DTYPES
+        >>> gdf = voter_file_to_geodataframe(
+        ...     "/data/inputs/TX_voters.csv",
+        ...     dtype=TARGETSMART_DEFAULT_DTYPES,
+        ... )
         >>> gdf.head()
     """
-    df = pd.read_csv(filepath)
+    df = pd.read_csv(
+        filepath,
+        encoding=encoding,
+        dtype=dtype,
+        quoting=quoting,
+        quotechar=quotechar,
+    )
     return _coerce_and_build_geometry(df, longitude_col, latitude_col, crs)

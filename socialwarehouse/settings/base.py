@@ -6,13 +6,35 @@ Override in development.py, production.py, or test.py as needed.
 """
 
 import os
+import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+# GST submodule wiring: insert the GST Django app directory into sys.path
+# so `import locations` resolves when Django processes INSTALLED_APPS.
+#
+# This MUST run before INSTALLED_APPS is referenced by Django -- which
+# means it must run at settings module-load time, not at manage.py time.
+# Pre-fix (ST3 / SW#141) the sys.path insert lived only in manage.py;
+# any entry point that bypassed manage.py (wsgi.py / asgi.py / pytest /
+# ad-hoc `from socialwarehouse.settings import base`) hit
+# `ModuleNotFoundError: No module named 'locations'` at startup.
+#
+# Putting it here makes every entry point that loads settings get the
+# wiring automatically. manage.py's redundant insert is preserved as
+# defense-in-depth but is no longer load-bearing.
+_GST_APP_DIR = BASE_DIR / "vendor" / "geodjango_simple_template" / "app" / "hellodjango"
+if _GST_APP_DIR.is_dir() and str(_GST_APP_DIR) not in sys.path:
+    sys.path.insert(0, str(_GST_APP_DIR))
+
+# Dev-only fallback. Production settings overrides this with a fail-fast
+# os.environ["DJANGO_SECRET_KEY"] read (ST1 / SW#139); production deployments
+# that forget the env var get a KeyError at startup rather than silently
+# running with the insecure default below.
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "insecure-dev-key-change-in-production")
 DEBUG = False
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = []  # base intentionally has no hosts; environment overrides (development = ["*"], production = bracket-subscript env-var-required per ST1/ST2) (ST5 / SW#143)
 
 INSTALLED_APPS = [
     # grappelli must precede django.contrib.admin (Grappelli requirement)
@@ -32,7 +54,10 @@ INSTALLED_APPS = [
     # socialwarehouse apps
     "socialwarehouse.geo",
     "socialwarehouse.warehouse",
-    # GST apps (via vendor/geodjango_simple_template/ submodule, P1B-B #68)
+    "socialwarehouse.demographic",
+    "socialwarehouse.economic",
+    "socialwarehouse.civic",
+    # GST apps from vendor submodule (bare name; sys.path wired above; P1B-B #68).
     "locations",
 ]
 
@@ -80,6 +105,18 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 100,
+    # A9 / SW#120: all api views require authentication. Default
+    # authentication classes are DRF's built-in Session + Basic; a
+    # token-based scheme can be added later by appending to this list
+    # (e.g. 'rest_framework.authentication.TokenAuthentication' once
+    # rest_framework.authtoken is wired into INSTALLED_APPS + migrated).
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework.authentication.BasicAuthentication",
+    ],
 }
 
 # Celery

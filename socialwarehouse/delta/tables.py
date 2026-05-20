@@ -84,6 +84,17 @@ SILVER_ADDRESSES = StructType([
     StructField("census_units_assigned_at", TimestampType(), True),
 ])
 
+# Intentionally NOT SCD2: the warehouse-side DimGeography tracks
+# is_current / effective_from / effective_to because geographies are
+# revised within a vintage (TIGER/Line corrections, redistricting
+# revisions). Census demographic estimates, by contrast, are
+# point-in-time snapshots keyed by the composite
+# (geoid, vintage_year, summary_level, variable_code, survey_type).
+# Revisions are published as a NEW vintage_year or survey_type — never
+# as an in-place edit of the same key. The natural key is the version,
+# so SCD2 effective_from/to would be redundant tracking.
+# Re-loads of the same key upsert by primary key.
+# (D7 / SW#129 — intentional simplification, documented per ticket.)
 SILVER_DEMOGRAPHICS = StructType([
     StructField("geoid", StringType(), False),
     StructField("vintage_year", IntegerType(), False),

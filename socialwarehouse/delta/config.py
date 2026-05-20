@@ -13,7 +13,6 @@ Usage:
 
 import logging
 import os
-from functools import lru_cache
 
 logger = logging.getLogger("socialwarehouse.delta")
 
@@ -24,14 +23,57 @@ S3_ACCESS_KEY = os.environ.get("S3_ACCESS_KEY", "")
 S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY", "")
 
 
-@lru_cache(maxsize=1)
+def _validate_s3_credentials():
+    """Fail-fast at module-load when WAREHOUSE_ROOT requires S3 credentials.
+
+    Pre-D5/SW#127: empty S3_ACCESS_KEY / S3_SECRET_KEY were silently passed
+    through to Spark's hadoop config; first read/write surfaced as an
+    opaque AWS SDK error mid-query (often hours into a job). Now: if the
+    warehouse root looks like s3a:// AND credentials are empty, raise a
+    clear RuntimeError at import time naming the env vars to set.
+
+    Carve-out: a non-s3a:// warehouse root (e.g. local file:// for dev)
+    does not require S3 creds; validation is skipped.
+    """
+    if not WAREHOUSE_ROOT.startswith(("s3a://", "s3://", "s3n://")):
+        return  # local filesystem or other; no S3 creds needed
+    missing = []
+    if not S3_ACCESS_KEY:
+        missing.append("S3_ACCESS_KEY")
+    if not S3_SECRET_KEY:
+        missing.append("S3_SECRET_KEY")
+    if missing:
+        raise RuntimeError(
+            f"WAREHOUSE_ROOT={WAREHOUSE_ROOT!r} requires S3 credentials but "
+            f"{', '.join(missing)} env var(s) are unset. Set them in the "
+            f"environment or point SW_WAREHOUSE_ROOT at a non-S3 path "
+            f"(e.g. 'file:///tmp/sw-warehouse' for local dev). (D5 / SW#127)"
+        )
+
+
+_validate_s3_credentials()
+
+
 def get_spark_session(app_name="socialwarehouse", enable_sedona=False):
     """Get or create a SparkSession configured for Delta Lake.
 
+    Idempotent via Spark's own `SparkSession.builder.getOrCreate()` — that
+    is the canonical singleton mechanism for a given JVM. An additional
+    @lru_cache layer would be wrong here: a parameterized function with a
+    cache_key based on (app_name, enable_sedona) evicts prior cached
+    sessions WITHOUT calling .stop() when called with different arg
+    combinations, leaking JVM-side state (SparkContext, scheduler, UI
+    server). The @lru_cache decorator was removed in fix for SW#126 (D4).
+
     Args:
-        app_name: Spark application name.
+        app_name: Spark application name. NOTE: only the FIRST call's
+            app_name takes effect for the JVM session; subsequent calls
+            return the existing session regardless of app_name. This is
+            standard Spark behavior, not a bug.
         enable_sedona: If True, register Apache Sedona UDTs and UDFs for
-            spatial operations within Spark.
+            spatial operations within Spark. If the session already
+            exists without Sedona, this call DOES register Sedona on the
+            existing session (registration is idempotent).
 
     Returns:
         SparkSession with Delta Lake extensions.

@@ -1,18 +1,23 @@
 """Geospatial API views — DSTK replacement.
 
 Provides geocoding, point-in-polygon, boundary retrieval, proximity,
-and intersection endpoints. Wraps siege_utilities BoundaryManager
-spatial queries.
+and intersection endpoints. Uses queryset manager methods
+(`containing_point`, `nearest`, standard Django ORM filters) on
+siege_utilities boundary models. No `BoundaryManager` wrapper class is
+imported or used; the previous wording of this docstring was stale.
+(A4 / SW#115)
 """
 
 import json
+import logging
 
 from django.contrib.gis.geos import Point
-from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from rest_framework import status
 from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.response import Response
+
+logger = logging.getLogger("socialwarehouse.api.geo")
 
 from socialwarehouse.api.pagination import GeoJSONPagination, StandardPagination
 from socialwarehouse.api.throttling import BulkExportThrottle, GeocodeThrottle
@@ -52,7 +57,26 @@ DEFAULT_GEOCODE_TYPES = [
 
 
 def _serialize_boundary(obj, include_geometry=False):
-    """Serialize a boundary object to a dict."""
+    """Serialize a boundary object to a dict.
+
+    The `hasattr` chain below is intentional: BOUNDARY_MODELS span
+    Census/political/timezone tables with genuinely different field
+    sets, and a single endpoint serializes whichever model the caller
+    requested. Per-field heterogeneity (A8 / SW#119):
+
+    - `abbreviation`: State only
+    - `state_fips`: County, Tract, Place, ZCTA, CongressionalDistrict,
+      StateLegislativeUpper/Lower, VTD (any sub-state Census model)
+    - `district_number`, `congress_number`: CongressionalDistrict only
+    - `timezone_id`, `utc_offset_std`: TimezoneGeometry only
+    - `area_land`, `area_water`: most Census boundaries; not on
+      TimezoneGeometry or political models that don't carry TIGER metadata
+
+    Replacing the chain with a per-model field map would be more code
+    than the chain itself for the same behavior, so we keep the chain
+    and document the diversity here. Mirrors the W6 (#110) pattern in
+    `dimension_loader.py`.
+    """
     data = {
         "geoid": getattr(obj, "geoid", getattr(obj, "feature_id", None)),
         "name": obj.name,
@@ -77,6 +101,29 @@ def _serialize_boundary(obj, include_geometry=False):
     if include_geometry and hasattr(obj, "geometry") and obj.geometry:
         data["geometry"] = json.loads(obj.geometry.geojson)
     return data
+
+
+def _resolve_boundary_model(boundary_type):
+    """Look up a model from BOUNDARY_MODELS or return a 400 Response.
+
+    Single-type lookup helper used by boundary_list, boundary_detail, and
+    proximity. Loop sites (geocode, _get_demographics_for_boundaries) iterate
+    requested types and silently skip unknowns — they do not use this helper.
+
+    Returns:
+        (model, None) on a known boundary_type.
+        (None, Response) with a 400 status and a valid_types list on miss.
+    """
+    model = BOUNDARY_MODELS.get(boundary_type)
+    if model is None:
+        return None, Response(
+            {
+                "error": f"Unknown boundary type: {boundary_type}",
+                "valid_types": list(BOUNDARY_MODELS.keys()),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return model, None
 
 
 @api_view(["GET"])
@@ -184,7 +231,12 @@ def reverse_geocode(request):
 @api_view(["GET"])
 @throttle_classes([GeocodeThrottle])
 def standardize_address(request):
-    """Standardize an address string without geocoding."""
+    """Standardize an address string without geocoding.
+
+    Best-effort placeholder: backed by `_standardize_address`, a naive
+    comma-split US-only parser. Not suitable for international formats
+    or addresses without commas. (A7 / SW#118)
+    """
     address = request.query_params.get("address")
     if not address:
         return Response({"error": "address parameter is required"}, status=status.HTTP_400_BAD_REQUEST)
@@ -196,12 +248,9 @@ def standardize_address(request):
 @api_view(["GET"])
 def boundary_list(request, boundary_type):
     """List boundaries of a given type with filtering and pagination."""
-    model = BOUNDARY_MODELS.get(boundary_type)
-    if model is None:
-        return Response(
-            {"error": f"Unknown boundary type: {boundary_type}", "valid_types": list(BOUNDARY_MODELS.keys())},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    model, err = _resolve_boundary_model(boundary_type)
+    if err is not None:
+        return err
 
     qs = model.objects.all()
 
@@ -243,13 +292,18 @@ def boundary_list(request, boundary_type):
     return paginator.get_paginated_response(data)
 
 
+# 1-day TTL (was 7 days, A5 / SW#116). Boundary updates from upstream
+# loaders (TIGER, RDH, etc.) ship on the order of weeks-to-months, so a
+# 24h staleness window matches the actual update cadence and keeps
+# operator surprise low after a re-load. Lacking a save-signal-driven
+# invalidation, 1 day is the right blunt instrument.
 @api_view(["GET"])
-@method_decorator(cache_page(60 * 60 * 24 * 7), name="dispatch")
+@cache_page(60 * 60 * 24)
 def boundary_detail(request, boundary_type, geoid):
     """Retrieve a single boundary by type and GEOID. Always includes geometry."""
-    model = BOUNDARY_MODELS.get(boundary_type)
-    if model is None:
-        return Response({"error": f"Unknown boundary type: {boundary_type}"}, status=status.HTTP_400_BAD_REQUEST)
+    model, err = _resolve_boundary_model(boundary_type)
+    if err is not None:
+        return err
 
     year = request.query_params.get("year")
     qs = model.objects.filter(geoid=geoid)
@@ -283,12 +337,9 @@ def proximity(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    model = BOUNDARY_MODELS.get(btype)
-    if model is None:
-        return Response(
-            {"error": f"Unknown boundary type: {btype}", "valid_types": list(BOUNDARY_MODELS.keys())},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    model, err = _resolve_boundary_model(btype)
+    if err is not None:
+        return err
 
     try:
         point = Point(float(lon), float(lat), srid=4326)
@@ -376,19 +427,32 @@ def intersections(request):
 # --- Internal helpers ---
 
 def _forward_geocode(address):
-    """Forward geocode via Nominatim. Returns (lat, lon) or None."""
+    """Forward geocode via Nominatim. Returns (lat, lon) or None.
+
+    Returns None on miss OR on failure; failures are logged at WARNING so
+    operators can distinguish "no result" from "geocoder down / network /
+    malformed query." Per writing-code:7 (no silent error swallowing).
+    """
     try:
         from siege_utilities.geo.geocoding import get_coordinates
         result = get_coordinates(address, country_codes=["us"])
         if result and result.latitude and result.longitude:
             return (result.latitude, result.longitude)
-    except Exception:
-        pass
-    return None
+        return None
+    except Exception as e:
+        logger.warning(
+            "_forward_geocode failed for address=%r: %s: %s",
+            address, type(e).__name__, e,
+        )
+        return None
 
 
 def _reverse_geocode(lat, lon):
-    """Reverse geocode via Nominatim. Returns address dict or None."""
+    """Reverse geocode via Nominatim. Returns address dict or None.
+
+    Returns None on miss OR on failure; failures are logged at WARNING.
+    Per writing-code:7 (no silent error swallowing).
+    """
     try:
         from geopy.geocoders import Nominatim
         geolocator = Nominatim(user_agent="socialwarehouse-api")
@@ -400,15 +464,33 @@ def _reverse_geocode(lat, lon):
                 "lon": location.longitude,
                 "raw": location.raw.get("address", {}),
             }
-    except Exception:
-        pass
-    return None
+        return None
+    except Exception as e:
+        logger.warning(
+            "_reverse_geocode failed for lat=%s lon=%s: %s: %s",
+            lat, lon, type(e).__name__, e,
+        )
+        return None
 
 
 def _standardize_address(address):
-    """Standardize an address string. Returns dict of parsed components."""
+    """Standardize an address string. Returns dict of parsed components.
+
+    PLACEHOLDER (A7 / SW#118): this is a naive comma-split that assumes
+    a US-style "street, city, state zip" shape. It will misparse
+    international formats, multi-line addresses, and anything without
+    commas. Replace with `usaddress` (US-only) or `libpostal` (heavier,
+    international) when the endpoint moves past placeholder status. The
+    `standardize_address` view that calls this is explicitly documented
+    as best-effort.
+
+    The returned dict's outer `input` key was previously dead — the
+    only caller (`standardize_address` at line 211) already surfaces
+    the original address as the response's `original` key and ignores
+    the inner `input`. Dropping it here. (A10 / SW#121)
+    """
     parts = [p.strip() for p in address.split(",")]
-    result = {"input": address, "components": {}}
+    result = {"components": {}}
     if len(parts) >= 3:
         result["components"]["street"] = parts[0]
         result["components"]["city"] = parts[1]

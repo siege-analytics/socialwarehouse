@@ -68,6 +68,18 @@ class DimensionLoaderService:
                             geoid=parent_geoid, vintage_year=vintage_year
                         ).first()
 
+                # The hasattr/getattr defenses below are intentional:
+                # MODEL_MAP covers Census + political boundary models
+                # with genuinely different field sets. Census-derived
+                # models (State, County, Tract, BlockGroup, Place,
+                # CongressionalDistrict) carry the full TIGER metadata
+                # (area_land, area_water, internal_point, geometry).
+                # Political models (StateLegislativeLower/Upper) carry
+                # geometry but not always the TIGER area fields. A
+                # per-model field map would be more code than the
+                # defensive lookups for the same end state. Mirrors the
+                # A8 (#119) pattern in api/geo/views.py:_serialize_boundary.
+                # (W6 / SW#110)
                 dim, created = DimGeography.objects.update_or_create(
                     geoid=boundary.geoid,
                     vintage_year=vintage_year,
@@ -155,6 +167,7 @@ class DimensionLoaderService:
                 cycle_year=cycle_year,
                 defaults={
                     "census_year": cycle_year,
+                    "first_election_year": cycle_year + 2,
                     "effective_start": date(cycle_year + 2, 1, 1),
                     "effective_end": date(cycle_year + 12, 1, 1),
                 },

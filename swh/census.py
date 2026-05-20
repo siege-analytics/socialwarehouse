@@ -28,7 +28,7 @@ Example usage:
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import geopandas as gpd
 
@@ -37,11 +37,47 @@ from swh.config import settings
 logger = logging.getLogger(__name__)
 
 
+class DownloadResult(NamedTuple):
+    """Structured return for the download_* functions.
+
+    Pre-S1/#131 the download functions returned just `dict[str, GeoDataFrame]`,
+    so per-boundary-type failures were logged but invisible to callers --
+    callers saw a `results` dict missing the failed keys and had no way to
+    know whether the gap was "not requested" or "requested but failed."
+    """
+
+    successes: dict[str, gpd.GeoDataFrame]  # boundary_type -> GeoDataFrame
+    failures: dict[str, Exception]  # boundary_type -> exception that fired
+
+    @property
+    def any_failed(self) -> bool:
+        return bool(self.failures)
+
+    @property
+    def all_failed(self) -> bool:
+        return bool(self.failures) and not self.successes
+
+
+class LoadResult(NamedTuple):
+    """Structured return for the load_*_to_postgis functions.
+
+    Mirrors DownloadResult shape: successes map to created table names;
+    failures map to whatever went wrong (download error or upload error).
+    """
+
+    successes: dict[str, str]  # boundary_type -> created table name
+    failures: dict[str, Exception]  # boundary_type -> exception that fired
+
+    @property
+    def any_failed(self) -> bool:
+        return bool(self.failures)
+
+
 def download_census_boundaries(
     state_fips: str,
     boundary_types: Optional[list[str]] = None,
     year: Optional[int] = None,
-) -> dict[str, gpd.GeoDataFrame]:
+) -> DownloadResult:
     """Download Census TIGER boundary files for a state.
 
     Uses siege_utilities.CensusDataSource which handles:
@@ -58,14 +94,18 @@ def download_census_boundaries(
         year: Census year. Defaults to settings.census.year.
 
     Returns:
-        Dict mapping boundary type name to GeoDataFrame.
+        DownloadResult (NamedTuple of successes + failures). Per-boundary-type
+        failures are caught + recorded; the function does NOT raise on
+        partial failure. Callers should check ``result.any_failed`` and act
+        accordingly. (S1 / SW#131)
 
     Example:
-        >>> gdfs = download_census_boundaries("48", boundary_types=["tabblock20", "county"])
-        >>> gdfs["tabblock20"].shape
+        >>> result = download_census_boundaries("48", boundary_types=["tabblock20", "county"])
+        >>> result.successes["tabblock20"].shape
         (914231, 12)
-        >>> gdfs["county"].shape
-        (254, 18)
+        >>> if result.any_failed:
+        ...     for bt, err in result.failures.items():
+        ...         print(f"Failed {bt}: {err}")
     """
     from siege_utilities.census import CensusDataSource
 
@@ -73,18 +113,20 @@ def download_census_boundaries(
     boundary_types = boundary_types or settings.census.boundary_types
 
     cds = CensusDataSource(year=year)
-    results = {}
+    successes: dict[str, gpd.GeoDataFrame] = {}
+    failures: dict[str, Exception] = {}
 
     for boundary_type in boundary_types:
         logger.info("Downloading %s for state FIPS %s (year=%d)", boundary_type, state_fips, year)
         try:
             gdf = cds.get_geographic_boundaries(state_fips, boundary_type)
-            results[boundary_type] = gdf
+            successes[boundary_type] = gdf
             logger.info("  -> %d features downloaded", len(gdf))
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to download %s for %s", boundary_type, state_fips)
+            failures[boundary_type] = e
 
-    return results
+    return DownloadResult(successes=successes, failures=failures)
 
 
 def load_census_to_postgis(
@@ -93,7 +135,7 @@ def load_census_to_postgis(
     year: Optional[int] = None,
     connection_string: Optional[str] = None,
     schema: str = "public",
-) -> dict[str, str]:
+) -> LoadResult:
     """Download Census boundaries and load them into PostGIS in one step.
 
     Replaces the old two-step process:
@@ -111,43 +153,63 @@ def load_census_to_postgis(
         schema: PostGIS schema. Defaults to "public".
 
     Returns:
-        Dict mapping boundary type to table name created in PostGIS.
+        LoadResult (NamedTuple of successes + failures). Successes map
+        boundary_type -> created table name; failures map boundary_type
+        -> the exception that fired (either at download or upload time).
+        Callers should check ``result.any_failed``. (S1 / SW#131)
 
     Example:
-        >>> tables = load_census_to_postgis("48", boundary_types=["tabblock20"])
-        >>> tables
+        >>> result = load_census_to_postgis("48", boundary_types=["tabblock20"])
+        >>> result.successes
         {'tabblock20': 'tabblock20_48'}
+        >>> if result.any_failed:
+        ...     print(f"{len(result.failures)} boundary types failed")
     """
-    from siege_utilities.connectors import PostGISConnector
+    from siege_utilities.geo.spatial_transformations import PostGISConnector
 
     conn_str = connection_string or settings.database.connection_string
     connector = PostGISConnector(conn_str)
 
-    gdfs = download_census_boundaries(state_fips, boundary_types, year)
-    tables = {}
+    download = download_census_boundaries(state_fips, boundary_types, year)
+    successes: dict[str, str] = {}
+    failures: dict[str, Exception] = dict(download.failures)
 
-    for boundary_type, gdf in gdfs.items():
+    for boundary_type, gdf in download.successes.items():
         table_name = f"{boundary_type}_{state_fips}"
         logger.info("Loading %s -> PostGIS table '%s' (%d features)", boundary_type, table_name, len(gdf))
-        connector.upload_spatial_data(gdf, table_name, schema=schema, if_exists="replace")
-        tables[boundary_type] = table_name
+        try:
+            ok = connector.upload_spatial_data(gdf, table_name, schema=schema, if_exists="replace")
+            if ok:
+                successes[boundary_type] = table_name
+            else:
+                # upload_spatial_data returns False on failure without raising.
+                failures[boundary_type] = RuntimeError(
+                    f"upload_spatial_data returned False for {table_name}"
+                )
+        except Exception as e:
+            logger.exception("Failed to upload %s -> %s", boundary_type, table_name)
+            failures[boundary_type] = e
 
-    return tables
+    return LoadResult(successes=successes, failures=failures)
 
 
 def download_all_states(
     boundary_types: Optional[list[str]] = None,
     year: Optional[int] = None,
-) -> dict[str, dict[str, gpd.GeoDataFrame]]:
+) -> dict[str, DownloadResult]:
     """Download Census boundaries for all configured states.
 
+    Returns one DownloadResult per state (S1 / SW#131). Callers iterate
+    state -> result; each result has its own successes/failures dicts.
+
     Example:
-        >>> all_data = download_all_states(boundary_types=["county"])
-        >>> all_data["48"]["county"].shape
+        >>> all_results = download_all_states(boundary_types=["county"])
+        >>> all_results["48"].successes["county"].shape
         (254, 18)
+        >>> total_failed = sum(len(r.failures) for r in all_results.values())
     """
     state_fips_list = settings.census.get_state_fips_list()
-    results = {}
+    results: dict[str, DownloadResult] = {}
 
     for fips in state_fips_list:
         logger.info("Processing state FIPS %s", fips)
@@ -161,16 +223,19 @@ def load_all_states_to_postgis(
     year: Optional[int] = None,
     connection_string: Optional[str] = None,
     schema: str = "public",
-) -> dict[str, dict[str, str]]:
+) -> dict[str, LoadResult]:
     """Download and load Census boundaries for all configured states into PostGIS.
 
+    Returns one LoadResult per state (S1 / SW#131). Callers iterate
+    state -> result; each result has its own successes/failures dicts.
+
     Example:
-        >>> all_tables = load_all_states_to_postgis(boundary_types=["tabblock20"])
-        >>> all_tables["48"]
+        >>> all_results = load_all_states_to_postgis(boundary_types=["tabblock20"])
+        >>> all_results["48"].successes
         {'tabblock20': 'tabblock20_48'}
     """
     state_fips_list = settings.census.get_state_fips_list()
-    results = {}
+    results: dict[str, LoadResult] = {}
 
     for fips in state_fips_list:
         logger.info("Processing state FIPS %s", fips)

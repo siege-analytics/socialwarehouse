@@ -19,47 +19,74 @@ logger = logging.getLogger("socialwarehouse.delta")
 
 
 def enrich_addresses_with_boundaries(spark, addresses_table, year=2020, boundaries_path=None):
-    """Join geocoded addresses with boundary names via Sedona spatial join.
+    """Spatial-enrich addresses with state, county, and CD boundary attributes.
+
+    Performs three sequential Sedona LEFT JOINs (state -> county -> cd). The
+    returned DataFrame has the input address columns plus:
+        state_name, county_geoid, county_name, cd_geoid, cd_name
+    Addresses that don't intersect a polygon at a given summary level get
+    NULL for that level's columns (LEFT JOIN semantics, consistent across
+    the three passes).
 
     Args:
-        spark: SparkSession with Sedona registered.
-        addresses_table: Delta path or table name for silver addresses.
-        year: Census vintage year for boundaries.
-        boundaries_path: Delta path for boundaries. If None, reads from
-            silver.boundaries in the registry.
+        spark: SparkSession with Sedona registered. Caller is responsible
+            for registration; absence surfaces as ``AnalysisException:
+            Undefined function: ST_Contains``.
+        addresses_table: Either a key in ``delta/tables.py:TABLES`` or a
+            raw Delta path.
+        year: Census vintage year for boundaries (default 2020).
+        boundaries_path: Optional Delta path for boundaries. Defaults to
+            ``get_table_path("silver", "boundaries")``.
 
     Returns:
-        DataFrame with address fields + boundary names.
+        Spark DataFrame with address columns + boundary attributes.
+
+    See docs/entities/delta_enrichment.md for the canonical entity contract,
+    constraints, and survey log.
     """
+    from pyspark.sql import functions as F
+
     from .config import get_table_path
     from .tables import TABLES
 
-    # Read addresses
     if addresses_table in TABLES:
         addr_path = TABLES[addresses_table]["path"]
-    else:
+    elif "/" in addresses_table or "://" in addresses_table:
+        # Explicit raw path — has a separator or scheme. Pass through.
         addr_path = addresses_table
+    else:
+        # No separator AND not a registry key — almost certainly a typo'd
+        # registry key (e.g. "silver.address" instead of "silver.addresses").
+        # Pre-D8/SW#130 the value fell through to spark.read.load() which
+        # surfaced as a confusing "path does not exist" deep in the Spark
+        # stack. Fail fast at the API boundary with the available keys.
+        raise ValueError(
+            f"Unknown addresses_table {addresses_table!r}. Must be a key "
+            f"in delta/tables.py:TABLES or a raw Delta path "
+            f"(containing '/' or a scheme like 's3a://'). "
+            f"Known keys: {sorted(TABLES.keys())}. (D8 / SW#130)"
+        )
 
     addresses = (
         spark.read.format("delta").load(addr_path)
-        .filter("latitude IS NOT NULL AND longitude IS NOT NULL")
+        .filter(F.col("latitude").isNotNull() & F.col("longitude").isNotNull())
     )
-
-    # Create point geometry column
     addresses = addresses.selectExpr(
         "*",
         "ST_Point(CAST(longitude AS DOUBLE), CAST(latitude AS DOUBLE)) AS geom_point",
     )
     addresses.createOrReplaceTempView("addresses")
 
-    # Read boundaries
     if boundaries_path is None:
         boundaries_path = get_table_path("silver", "boundaries")
 
+    # Pre-filter boundaries by year via DataFrame API (no SQL string
+    # interpolation of `year` -- D1 / SW#123). The downstream SQL joins
+    # therefore drop the redundant `b.vintage_year = {year}` predicate.
     boundaries = (
         spark.read.format("delta").load(boundaries_path)
-        .filter(f"vintage_year = {year}")
-        .filter("wkt IS NOT NULL")
+        .filter(F.col("vintage_year") == year)
+        .filter(F.col("wkt").isNotNull())
     )
     boundaries = boundaries.selectExpr(
         "*",
@@ -67,42 +94,42 @@ def enrich_addresses_with_boundaries(spark, addresses_table, year=2020, boundari
     )
     boundaries.createOrReplaceTempView("boundaries")
 
-    # Spatial join — state
-    state_join = spark.sql("""
-        SELECT a.*, b.name AS state_name
+    # Three sequential LEFT JOINs. Each step's temp view carries
+    # `a.geom_point` through to the next join. All three contribute to the
+    # returned DataFrame (D2 / SW#124).
+    enriched = spark.sql("""
+        SELECT a.*, s.name AS state_name
         FROM addresses a
-        LEFT JOIN boundaries b
-            ON ST_Contains(b.geom_boundary, a.geom_point)
-            AND b.summary_level = 'state'
-            AND b.vintage_year = {year}
-    """.format(year=year))
+        LEFT JOIN boundaries s
+            ON ST_Contains(s.geom_boundary, a.geom_point)
+            AND s.summary_level = 'state'
+    """)
+    enriched.createOrReplaceTempView("with_state")
 
-    # Spatial join — county
-    county_join = spark.sql("""
-        SELECT b.geoid AS county_geoid_joined, b.name AS county_name
-        FROM addresses a
-        JOIN boundaries b
-            ON ST_Contains(b.geom_boundary, a.geom_point)
-            AND b.summary_level = 'county'
-            AND b.vintage_year = {year}
-    """.format(year=year))
+    enriched = spark.sql("""
+        SELECT a.*, c.geoid AS county_geoid, c.name AS county_name
+        FROM with_state a
+        LEFT JOIN boundaries c
+            ON ST_Contains(c.geom_boundary, a.geom_point)
+            AND c.summary_level = 'county'
+    """)
+    enriched.createOrReplaceTempView("with_state_county")
 
-    # Spatial join — congressional district
-    cd_join = spark.sql("""
-        SELECT b.geoid AS cd_geoid_joined, b.name AS cd_name
-        FROM addresses a
-        JOIN boundaries b
-            ON ST_Contains(b.geom_boundary, a.geom_point)
-            AND b.summary_level = 'cd'
-            AND b.vintage_year = {year}
-    """.format(year=year))
+    enriched = spark.sql("""
+        SELECT a.*, d.geoid AS cd_geoid, d.name AS cd_name
+        FROM with_state_county a
+        LEFT JOIN boundaries d
+            ON ST_Contains(d.geom_boundary, a.geom_point)
+            AND d.summary_level = 'cd'
+    """)
 
+    # No .count() in the log (D3 / SW#125 -- .count() is a Spark action
+    # and would force full plan execution for a log message).
     logger.info(
-        "Enrichment complete: %d addresses joined with %d year boundaries",
-        addresses.count(), year,
+        "Enrichment complete: state/county/cd joins for year %d", year,
     )
 
-    return state_join
+    return enriched
 
 
 def load_postgis_addresses_to_delta(spark, batch_size=100_000):

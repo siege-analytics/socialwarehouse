@@ -1,7 +1,23 @@
 """Unit tests for the DSTK replacement geo API."""
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
+
+
+def _authenticate(client):
+    """Authenticate an APIClient with a test user.
+
+    A9 / SW#120: all api views require authentication. Tests exercising
+    endpoint logic (validation, response shape) use force_authenticate
+    so the auth gate doesn't mask the logic under test.
+    Anonymous-access enforcement is covered in
+    TestGeoAPIAuthenticationRequired.
+    """
+    User = get_user_model()
+    user, _ = User.objects.get_or_create(username="api_test_user")
+    client.force_authenticate(user=user)
+    return user
 
 
 class TestGeoAPIEndpoints(TestCase):
@@ -9,6 +25,7 @@ class TestGeoAPIEndpoints(TestCase):
 
     def setUp(self):
         self.client = APIClient()
+        _authenticate(self.client)
 
     def test_geocode_requires_params(self):
         response = self.client.get("/api/geo/geocode/")
@@ -58,6 +75,7 @@ class TestWarehouseAPIEndpoints(TestCase):
 
     def setUp(self):
         self.client = APIClient()
+        _authenticate(self.client)
 
     def test_geographies_list(self):
         response = self.client.get("/api/warehouse/geographies/")
@@ -70,3 +88,27 @@ class TestWarehouseAPIEndpoints(TestCase):
     def test_acs_estimates_list(self):
         response = self.client.get("/api/warehouse/acs-estimates/")
         assert response.status_code == 200
+
+
+class TestGeoAPIAuthenticationRequired(TestCase):
+    """A9 / SW#120: anonymous clients are denied. Regression guard
+    against accidental permission_classes removal or DEFAULT_PERMISSION_CLASSES
+    rollback.
+    """
+
+    def setUp(self):
+        self.anon = APIClient()  # no auth
+
+    def test_anonymous_geocode_denied(self):
+        response = self.anon.get("/api/geo/geocode/", {"lat": "30.0", "lon": "-97.0"})
+        assert response.status_code in (401, 403), (
+            f"Expected 401/403 for anonymous access; got {response.status_code}"
+        )
+
+    def test_anonymous_boundary_list_denied(self):
+        response = self.anon.get("/api/geo/boundaries/state/")
+        assert response.status_code in (401, 403)
+
+    def test_anonymous_warehouse_geographies_denied(self):
+        response = self.anon.get("/api/warehouse/geographies/")
+        assert response.status_code in (401, 403)

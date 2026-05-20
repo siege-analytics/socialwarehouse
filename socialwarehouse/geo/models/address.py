@@ -23,11 +23,11 @@ from django.utils import timezone
 # TIGER vintage shifts (next bump: 2030 vintage's general-availability
 # date — TBD, currently expected ~2030-2032).
 #
-# This is INTENTIONALLY a module-level int constant, not a callable
-# default reading Vintage — that path tangles with F11 (#100 —
-# Address.census_year vs Vintage dual source of truth) and is being
-# deferred until the dual-source-of-truth question is settled.
-# Tracked: F6 / SW#95.
+# SW#100 resolution: Address.census_year is canonical (denormalized
+# fast-read year hint) and is signal-maintained from census-decadal
+# ABP writes (see socialwarehouse.geo.signals._census_year_from_vintage).
+# ABP.vintage remains authoritative per-row; Address.census_year is
+# the cached "what decade is this Address's geocoding from" value.
 DEFAULT_CENSUS_YEAR = 2020
 
 
@@ -157,7 +157,12 @@ class Address(models.Model):
     # "bumped manually each decade" rule has a single edit site.
     census_year = models.IntegerField(
         default=DEFAULT_CENSUS_YEAR,
-        help_text="Census year for boundary assignment (2010, 2020)",
+        help_text=(
+            "Census decade for this Address's boundary assignment (2010, "
+            "2020, ...). Denormalized cache, maintained by the F11 step-2b "
+            "signal from census-decadal ABP writes (SW#100). ABP.vintage "
+            "is per-row authoritative; this field is the fast-read decade."
+        ),
     )
 
     # ── Census unit GEOIDs (primary, string-indexed) ─────────────────────

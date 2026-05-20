@@ -29,7 +29,7 @@ logger = logging.getLogger("socialwarehouse.geo")
 
 # Import-discipline note (F9 / SW#98):
 #
-# Heavy domain imports (Address, AddressBoundaryPeriod, CensusVintageConfig,
+# Heavy domain imports (Address, AddressBoundaryPeriod, CensusDecadalVintage,
 # siege_utilities.geo.django.models.*, RedistrictingPlan, etc.) live INSIDE
 # the methods that use them, not at module top. Reasons, in order:
 #
@@ -184,8 +184,8 @@ class Command(BaseCommand):
 
     def _resolve_vintage(self, calendar_year: int) -> int:
         """Map a calendar year to a Census vintage year."""
-        from socialwarehouse.geo.models import CensusVintageConfig
-        config = CensusVintageConfig.for_year(calendar_year)
+        from socialwarehouse.geo.models import CensusDecadalVintage
+        config = CensusDecadalVintage.objects.for_year(calendar_year)
         if config:
             return config.decade
         # Fallback: round down to nearest decade
@@ -240,10 +240,10 @@ class Command(BaseCommand):
             StateLegislativeLower, StateLegislativeUpper,
             PlanDistrict,
         )
-        from socialwarehouse.geo.models import Address, AddressBoundaryPeriod, CensusVintageConfig
+        from socialwarehouse.geo.models import Address, AddressBoundaryPeriod, CensusDecadalVintage
 
-        vintage_config = CensusVintageConfig.for_year(year) if plan_aware else (
-            CensusVintageConfig.objects.filter(decade=year).first()
+        vintage_config = CensusDecadalVintage.objects.for_year(year) if plan_aware else (
+            CensusDecadalVintage.objects.filter(decade=year).first()
         )
 
         addr_ids = list(

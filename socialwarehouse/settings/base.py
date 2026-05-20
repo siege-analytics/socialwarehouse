@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "socialwarehouse.warehouse",
     "socialwarehouse.demographic",
     "socialwarehouse.economic",
+    "socialwarehouse.civic",
     # GST apps from vendor submodule (bare name; sys.path wired above).
     "locations",
 ]

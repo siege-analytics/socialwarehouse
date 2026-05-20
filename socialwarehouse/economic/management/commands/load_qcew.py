@@ -43,6 +43,15 @@ class Command(BaseCommand):
             help="NAICS code length; 2 = sector (default), 3 = subsector, etc.",
         )
         parser.add_argument(
+            "--boundary-type", type=str, default="county",
+            choices=["county", "cbsa", "both"],
+            help=(
+                "Which BLS aggregation levels to load. 'county' (default) keeps "
+                "Phase 1's county-only behavior. 'cbsa' loads MSA-level rows. "
+                "'both' loads county + MSA in one pass."
+            ),
+        )
+        parser.add_argument(
             "--dry-run", action="store_true",
             help="Fetch + report counts without writing.",
         )
@@ -55,6 +64,7 @@ class Command(BaseCommand):
         vintage_name = options["vintage"]
         state_fips = options["state"]
         naics_depth = options["naics_depth"]
+        boundary_type_arg = options["boundary_type"]
         dry_run = options["dry_run"]
 
         # Resolve vintage.
@@ -93,14 +103,16 @@ class Command(BaseCommand):
         written = 0
         with transaction.atomic():
             for _, row in df.iterrows():
-                geoid = str(row["area_fips"])
-                # Phase 1 = county-level only.
-                if len(geoid) != 5:
+                area_fips = str(row["area_fips"])
+                boundary_type, geoid = self._classify_row(area_fips, row.get("agglvl_code"))
+                if boundary_type is None:
+                    continue
+                if boundary_type_arg != "both" and boundary_type != boundary_type_arg:
                     continue
 
                 BLSQCEWAggregate.objects.update_or_create(
                     vintage=vintage,
-                    boundary_type="county",
+                    boundary_type=boundary_type,
                     geoid=geoid,
                     ownership_code=str(row["own_code"]),
                     industry_code=str(row["industry_code"]),
@@ -116,6 +128,34 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"Wrote {written} BLSQCEWAggregate rows for {vintage.name} state={state_fips}."
         ))
+
+    @staticmethod
+    def _classify_row(area_fips, agglvl_code):
+        """Classify a QCEW row's boundary_type + geoid.
+
+        BLS convention:
+          - County area_fips: 5 digits, purely numeric (e.g. "06037").
+            agglvl_code starts with '5'.
+          - MSA / CBSA area_fips: "C" prefix + 4 digits (e.g. "C3108"
+            for CBSA 31084 — BLS drops the leading digit). agglvl_code
+            starts with '4'.
+          - National / state / other aggregates: skipped.
+
+        Returns (boundary_type, geoid) or (None, None) to skip.
+        For CBSA rows, the returned geoid is the area_fips as-published
+        ("C3108" etc.) — analysts who want to join against Census CBSA
+        codes can either translate at query time or wait for a future
+        normalization pass.
+        """
+        if not area_fips:
+            return None, None
+        agglvl = str(agglvl_code or "")
+        if agglvl.startswith("5") and len(area_fips) == 5 and area_fips.isdigit():
+            return "county", area_fips
+        if agglvl.startswith("4") and area_fips.startswith("C"):
+            return "cbsa", area_fips
+        # National (agglvl 1x), state (agglvl 2x/3x), or unknown — skip.
+        return None, None
 
     @staticmethod
     def _to_int(raw):

@@ -742,11 +742,20 @@ class Address(models.Model):
         except ImportError:
             return False
 
-        current_plan = RedistrictingPlan.objects.for_date(
-            state_fips=state_fips,
-            chamber=chamber,
-            date=timezone.localdate(),
-        )
+        try:
+            current_plan = RedistrictingPlan.objects.for_date(
+                state_fips=state_fips,
+                chamber=chamber,
+                date=timezone.localdate(),
+            )
+        except Exception:
+            # SU#527: effective_from / effective_to columns are declared
+            # on the SU model but the SU migrations in pinned versions
+            # don't always create them. The documented fallback for "we
+            # can't resolve a current plan" is "not stale" — silence
+            # beats alarm-without-information. Same dodge pattern as
+            # `_safe_plan_name` above.
+            return False
         if current_plan is None:
             return False
 

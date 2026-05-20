@@ -3,13 +3,46 @@
 Pins the documented semantic: "current plan = the plan that would
 apply if an election were held at the time of this call,"
 resolved via RedistrictingPlan.objects.for_date.
+
+Most tests here create RedistrictingPlan rows with effective_from /
+effective_to and call the for_date manager method — both of which
+require SU#527's migration to have shipped the columns. The
+`_REQUIRES_SU527` mark detects that at import time and skips the
+affected tests when the columns are missing, so SW CI stays green
+against older SU pins. (The method-under-test ALREADY falls back to
+"not stale" when the columns are missing — that path is exercised by
+TestNonRedistrictingTypesAlwaysNotStale and the no-state-geoid path,
+which don't touch the columns.)
 """
 
 from datetime import date
 from unittest.mock import patch
 
+import pytest
+from django.db import connection
 from django.test import TestCase
 from django.utils import timezone
+
+
+def _has_su527_columns():
+    """True if siege_geo_redistrictingplan has the SU#527 date columns."""
+    try:
+        from siege_utilities.geo.django.models import RedistrictingPlan
+        with connection.cursor() as cur:
+            cols = {
+                f.name for f in connection.introspection.get_table_description(
+                    cur, RedistrictingPlan._meta.db_table,
+                )
+            }
+        return "effective_from" in cols and "effective_to" in cols
+    except Exception:
+        return False
+
+
+_REQUIRES_SU527 = pytest.mark.skipif(
+    not _has_su527_columns(),
+    reason="SU#527 columns (effective_from / effective_to) not present in pinned SU version",
+)
 
 
 class _StaleBase(TestCase):
@@ -86,9 +119,11 @@ class TestNoCurrentPlanNotStale(_StaleBase):
     """
 
     def test_no_plan_in_db(self):
+        # Doesn't create a plan, so doesn't depend on SU#527 columns.
         self._make_abp(boundary_type="cd", plan_id=None)
         assert self.addr.is_redistricting_assignment_stale("cd") is False
 
+    @_REQUIRES_SU527
     def test_only_future_plan(self):
         # A plan exists but its effective_from is after today.
         self._make_plan(
@@ -99,6 +134,7 @@ class TestNoCurrentPlanNotStale(_StaleBase):
         assert self.addr.is_redistricting_assignment_stale("cd") is False
 
 
+@_REQUIRES_SU527
 class TestNoABPNotStale(_StaleBase):
     """If the address has no ABP for this type, nothing is stale."""
 
@@ -110,6 +146,7 @@ class TestNoABPNotStale(_StaleBase):
         assert self.addr.is_redistricting_assignment_stale("cd") is False
 
 
+@_REQUIRES_SU527
 class TestStaleWhenPlanMismatches(_StaleBase):
 
     def test_abp_under_older_plan_is_stale(self):
@@ -145,6 +182,7 @@ class TestStaleWhenPlanMismatches(_StaleBase):
             assert self.addr.is_redistricting_assignment_stale("cd") is True
 
 
+@_REQUIRES_SU527
 class TestNotStaleWhenPlansMatch(_StaleBase):
 
     def test_abp_under_current_plan_not_stale(self):
@@ -158,6 +196,7 @@ class TestNotStaleWhenPlansMatch(_StaleBase):
             assert self.addr.is_redistricting_assignment_stale("cd") is False
 
 
+@_REQUIRES_SU527
 class TestStateSenateAndHouseChambers(_StaleBase):
 
     def test_sldl_uses_state_house_chamber(self):

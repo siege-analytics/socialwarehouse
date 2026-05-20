@@ -159,10 +159,10 @@ class GeographicEnrichmentService:
         Returns count of crosswalk records applied.
         """
         from siege_utilities.geo.django.models import TemporalCrosswalk
-        from socialwarehouse.geo.models import Address, AddressBoundaryPeriod, CensusVintageConfig
+        from socialwarehouse.geo.models import Address, AddressBoundaryPeriod, CensusDecadalVintage
 
-        source_vintage = CensusVintageConfig.objects.filter(decade=source_year).first()
-        target_vintage = CensusVintageConfig.objects.filter(decade=target_year).first()
+        source_vintage = CensusDecadalVintage.objects.filter(decade=source_year).first()
+        target_vintage = CensusDecadalVintage.objects.filter(decade=target_year).first()
 
         if not source_vintage or not target_vintage:
             logger.error("Missing vintage config for %d or %d", source_year, target_year)

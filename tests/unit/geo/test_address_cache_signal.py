@@ -22,35 +22,31 @@ from socialwarehouse.geo.signals import (
 
 
 class TestIsCurrentVintage(TestCase):
-    """`_is_current_vintage` recognizes the current vintage window.
-
-    Uses CensusVintageConfig (integer-year effective_start / effective_end)
-    today; a follow-up (SW#202) swaps these to polymorphic Vintage's
-    date-typed effective_from / effective_to after template-readiness B
-    lands.
-    """
+    """`_is_current_vintage` recognizes the current vintage window
+    against the polymorphic Vintage's date-typed `effective_from /
+    effective_to`."""
 
     def setUp(self):
-        from socialwarehouse.geo.models import CensusVintageConfig
-
-        CensusVintageConfig.seed_defaults()
-        self.vintage_2010 = CensusVintageConfig.objects.get(decade=2010)
-        self.vintage_2020 = CensusVintageConfig.objects.get(decade=2020)
+        from socialwarehouse.geo.models import CensusDecadalVintage
+        self.vintage_2010 = CensusDecadalVintage.objects.get(decade=2010)
+        self.vintage_2020 = CensusDecadalVintage.objects.get(decade=2020)
 
     def test_current_vintage_today_in_window(self):
-        # vintage_2020 covers 2020-2029; today=2026-05-19 is inside.
+        # vintage_2020 has effective_to=None (unreplaced); today inside.
         assert _is_current_vintage(self.vintage_2020, today=date(2026, 5, 19))
 
     def test_past_vintage_today_after_window(self):
-        # vintage_2010 covers 2010-2019; today=2026-05-19 is after.
+        # vintage_2010 has effective_to=date(2020,1,1); today=2026 is after.
         assert not _is_current_vintage(self.vintage_2010, today=date(2026, 5, 19))
 
     def test_future_vintage_today_before_window(self):
         # Hypothetical 2030 vintage; today=2026 is before.
-        from socialwarehouse.geo.models import CensusVintageConfig
+        from socialwarehouse.geo.models import CensusDecadalVintage
 
-        future = CensusVintageConfig.objects.create(
-            decade=2030, effective_start=2030, effective_end=2039,
+        future = CensusDecadalVintage.objects.create(
+            decade=2030,
+            effective_from=date(2030, 1, 1),
+            effective_to=None,
         )
         assert not _is_current_vintage(future, today=date(2026, 5, 19))
 
@@ -63,11 +59,9 @@ class TestSignalCacheRefresh(TestCase):
     vintage is written; bails out otherwise."""
 
     def setUp(self):
-        from socialwarehouse.geo.models import Address, CensusVintageConfig
-
-        CensusVintageConfig.seed_defaults()
-        self.vintage_2020 = CensusVintageConfig.objects.get(decade=2020)
-        self.vintage_2010 = CensusVintageConfig.objects.get(decade=2010)
+        from socialwarehouse.geo.models import Address, CensusDecadalVintage
+        self.vintage_2020 = CensusDecadalVintage.objects.get(decade=2020)
+        self.vintage_2010 = CensusDecadalVintage.objects.get(decade=2010)
         self.addr = Address.objects.create(state_abbreviation="CA")
 
     def _create_abp(self, **kwargs):
@@ -148,11 +142,9 @@ class TestRefreshAddressCachesHelper(TestCase):
 
     def setUp(self):
         from socialwarehouse.geo.models import (
-            Address, AddressBoundaryPeriod, CensusVintageConfig,
+            Address, AddressBoundaryPeriod, CensusDecadalVintage,
         )
-
-        CensusVintageConfig.seed_defaults()
-        self.vintage = CensusVintageConfig.objects.get(decade=2020)
+        self.vintage = CensusDecadalVintage.objects.get(decade=2020)
         self.addr1 = Address.objects.create(state_abbreviation="CA")
         self.addr2 = Address.objects.create(state_abbreviation="TX")
 
@@ -211,11 +203,9 @@ class TestMultiWriteIntegration(TestCase):
 
     def test_sequential_writes_cache_tracks_latest(self):
         from socialwarehouse.geo.models import (
-            Address, AddressBoundaryPeriod, CensusVintageConfig,
+            Address, AddressBoundaryPeriod, CensusDecadalVintage,
         )
-
-        CensusVintageConfig.seed_defaults()
-        vintage = CensusVintageConfig.objects.get(decade=2020)
+        vintage = CensusDecadalVintage.objects.get(decade=2020)
         addr = Address.objects.create(state_abbreviation="AL")
 
         # 1. Initial assign: Census-default plan.
@@ -237,7 +227,7 @@ class TestMultiWriteIntegration(TestCase):
         assert addr.cd_geoid == "0102"
 
         # 3. Backfilling a HISTORICAL 2010 vintage; cache should NOT update.
-        v_2010 = CensusVintageConfig.objects.get(decade=2010)
+        v_2010 = CensusDecadalVintage.objects.get(decade=2010)
         AddressBoundaryPeriod.objects.create(
             address=addr, vintage=v_2010,
             cd_geoid="0199", context_date=date(2015, 1, 1),

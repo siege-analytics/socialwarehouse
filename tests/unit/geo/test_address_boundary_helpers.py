@@ -28,12 +28,10 @@ class TestBoundaryHistory(TestCase):
 
     def setUp(self):
         from socialwarehouse.geo.models import (
-            Address, AddressBoundaryPeriod, CensusVintageConfig,
+            Address, AddressBoundaryPeriod, CensusDecadalVintage,
         )
-
-        CensusVintageConfig.seed_defaults()
-        self.vintage_2020 = CensusVintageConfig.objects.get(decade=2020)
-        self.vintage_2010 = CensusVintageConfig.objects.get(decade=2010)
+        self.vintage_2020 = CensusDecadalVintage.objects.get(decade=2020)
+        self.vintage_2010 = CensusDecadalVintage.objects.get(decade=2010)
 
         self.addr = Address.objects.create(
             primary_number="100",
@@ -131,11 +129,9 @@ class TestBoundariesOnNullPlanFallback(TestCase):
 
     def setUp(self):
         from socialwarehouse.geo.models import (
-            Address, AddressBoundaryPeriod, CensusVintageConfig,
+            Address, AddressBoundaryPeriod, CensusDecadalVintage,
         )
-
-        CensusVintageConfig.seed_defaults()
-        self.vintage_2020 = CensusVintageConfig.objects.get(decade=2020)
+        self.vintage_2020 = CensusDecadalVintage.objects.get(decade=2020)
 
         self.addr = Address.objects.create(state_abbreviation="TX")
 
@@ -164,7 +160,7 @@ class TestBoundariesOnNullPlanFallback(TestCase):
         assert "sldl" not in result
 
     def test_no_vintage_for_year_returns_empty(self):
-        # Year with no CensusVintageConfig row (seed_defaults covers 2010/2020).
+        # Year with no CensusDecadalVintage row (seed_defaults covers 2010/2020).
         result = self.addr.boundaries_on(date(1985, 1, 1))
         assert result == {}
 
@@ -174,11 +170,9 @@ class TestBoundaryOn(TestCase):
 
     def setUp(self):
         from socialwarehouse.geo.models import (
-            Address, AddressBoundaryPeriod, CensusVintageConfig,
+            Address, AddressBoundaryPeriod, CensusDecadalVintage,
         )
-
-        CensusVintageConfig.seed_defaults()
-        vintage = CensusVintageConfig.objects.get(decade=2020)
+        vintage = CensusDecadalVintage.objects.get(decade=2020)
         self.addr = Address.objects.create(state_abbreviation="GA")
 
         self.abp = AddressBoundaryPeriod.objects.create(
@@ -212,11 +206,9 @@ class TestBoundaryAt(TestCase):
 
     def setUp(self):
         from socialwarehouse.geo.models import (
-            Address, AddressBoundaryPeriod, CensusVintageConfig,
+            Address, AddressBoundaryPeriod, CensusDecadalVintage,
         )
-
-        CensusVintageConfig.seed_defaults()
-        vintage = CensusVintageConfig.objects.get(decade=2020)
+        vintage = CensusDecadalVintage.objects.get(decade=2020)
         self.addr = Address.objects.create(state_abbreviation="AL")
 
         # Three CD-bearing periods, oldest first; will sort newest-first.
@@ -275,11 +267,9 @@ class TestGeoidOn(TestCase):
 
     def setUp(self):
         from socialwarehouse.geo.models import (
-            Address, AddressBoundaryPeriod, CensusVintageConfig,
+            Address, AddressBoundaryPeriod, CensusDecadalVintage,
         )
-
-        CensusVintageConfig.seed_defaults()
-        vintage = CensusVintageConfig.objects.get(decade=2020)
+        vintage = CensusDecadalVintage.objects.get(decade=2020)
         self.addr = Address.objects.create(state_abbreviation="MI")
 
         AddressBoundaryPeriod.objects.create(
@@ -315,12 +305,10 @@ class TestCurrentGeoid(TestCase):
 
     def test_delegates_to_today(self):
         from socialwarehouse.geo.models import (
-            Address, AddressBoundaryPeriod, CensusVintageConfig,
+            Address, AddressBoundaryPeriod, CensusDecadalVintage,
         )
         from django.utils import timezone
-
-        CensusVintageConfig.seed_defaults()
-        vintage = CensusVintageConfig.objects.get(decade=2020)
+        vintage = CensusDecadalVintage.objects.get(decade=2020)
         addr = Address.objects.create(state_abbreviation="WA")
 
         AddressBoundaryPeriod.objects.create(
@@ -351,12 +339,10 @@ class TestBoundaryTimeline(TestCase):
 
     def setUp(self):
         from socialwarehouse.geo.models import (
-            Address, AddressBoundaryPeriod, CensusVintageConfig,
+            Address, AddressBoundaryPeriod, CensusDecadalVintage,
         )
-
-        CensusVintageConfig.seed_defaults()
-        self.vintage_2010 = CensusVintageConfig.objects.get(decade=2010)
-        self.vintage_2020 = CensusVintageConfig.objects.get(decade=2020)
+        self.vintage_2010 = CensusDecadalVintage.objects.get(decade=2010)
+        self.vintage_2020 = CensusDecadalVintage.objects.get(decade=2020)
 
         self.addr = Address.objects.create(state_abbreviation="AL")
 
@@ -452,12 +438,10 @@ class TestCurrentBoundaries(TestCase):
 
     def test_delegates_to_today(self):
         from socialwarehouse.geo.models import (
-            Address, AddressBoundaryPeriod, CensusVintageConfig,
+            Address, AddressBoundaryPeriod, CensusDecadalVintage,
         )
         from django.utils import timezone
-
-        CensusVintageConfig.seed_defaults()
-        vintage = CensusVintageConfig.objects.get(decade=2020)
+        vintage = CensusDecadalVintage.objects.get(decade=2020)
         addr = Address.objects.create(state_abbreviation="NY")
 
         abp = AddressBoundaryPeriod.objects.create(

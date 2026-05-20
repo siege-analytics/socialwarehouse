@@ -65,14 +65,17 @@ class NCESFiles:
 
     @staticmethod
     def _parse_school_year(school_year: str) -> tuple[int, int]:
-        """'2022-23' -> (2022, 2023). '2023-24' -> (2023, 2024)."""
+        """'2022-23' -> (2022, 2023); '2099-00' -> (2099, 2100).
+
+        School years span two consecutive calendar years; the '-NN'
+        suffix is decorative for the human reader. We just take the
+        start year and add 1.
+        """
         if "-" not in school_year:
             raise ValueError(f"school_year must be like '2022-23'; got {school_year!r}")
-        start_str, end_str = school_year.split("-", 1)
+        start_str, _ = school_year.split("-", 1)
         start = int(start_str)
-        end_2 = int(end_str)
-        end = (start // 100) * 100 + end_2 if end_2 < (start % 100) else start + 1
-        return start, end
+        return start, start + 1
 
     def _download_zip(self, url: str, cache_name: str) -> Path:
         """Download + cache one NCES zip; return CSV path inside cache_dir."""

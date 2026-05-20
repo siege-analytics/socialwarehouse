@@ -84,6 +84,14 @@ class AddressBoundaryPeriod(models.Model):
     sldl_geoid = models.CharField(max_length=5, null=True, blank=True)
     sldu_geoid = models.CharField(max_length=5, null=True, blank=True)
 
+    # Template-readiness C high-priority batch (SW#191): new boundary types.
+    # Static (non-redistricting) boundaries; populated by assign_boundaries
+    # once SU#532 ships the corresponding boundary models.
+    zcta_geoid = models.CharField(max_length=5, null=True, blank=True)
+    place_geoid = models.CharField(max_length=7, null=True, blank=True)
+    cbsa_geoid = models.CharField(max_length=5, null=True, blank=True)
+    school_district_geoid = models.CharField(max_length=7, null=True, blank=True)
+
     # siege_geo ForeignKeys (optional, for rich queries)
     siege_state = models.ForeignKey(
         "siege_geo.State", on_delete=models.SET_NULL,

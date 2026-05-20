@@ -62,6 +62,12 @@ CCD_SCHOOL_NONFISCAL_URL = (
     "https://nces.ed.gov/ccd/data/zip/ccd_sch_052_{end_2digit}_l_1a.zip"
 )
 
+# EDGE per-district ACS-derived demographics (Phase 1c).
+# Example: EDGE_ACS_2018-22_DISTRICT.csv
+EDGE_DISTRICT_DEMOGRAPHICS_URL = (
+    "https://nces.ed.gov/programs/edge/data/EDGE_ACS_{acs_endpoint}_DISTRICT.csv"
+)
+
 
 class NCESFiles:
     """Thin wrapper around NCES CCD open data files (Phase 1a)."""
@@ -136,3 +142,26 @@ class NCESFiles:
         url = CCD_SCHOOL_NONFISCAL_URL.format(end_2digit=str(end)[-2:])
         path = self._download_zip(url, f"ccd_sch_nonfiscal_{school_year}")
         return pd.read_csv(path, dtype={"NCESSCH": str, "LEAID": str}, low_memory=False)
+
+    # ── EDGE per-district demographics (Phase 1c) ─────────────────────
+
+    def load_edge_district_demographics(self, acs_endpoint: str) -> pd.DataFrame:
+        """Load EDGE per-school-district demographic estimates.
+
+        `acs_endpoint` is the ACS 5-year endpoint range like "2018-22".
+        Returns a DataFrame with LEAID + the EDGE demographic variables.
+        Unlike CCD files, EDGE is a direct CSV (no zip).
+        """
+        url = EDGE_DISTRICT_DEMOGRAPHICS_URL.format(acs_endpoint=acs_endpoint)
+        cache_name = f"edge_district_{acs_endpoint}"
+        csv_path = self.cache_dir / f"{cache_name}.csv"
+        if not csv_path.exists():
+            logger.info("Downloading EDGE district demographics: %s", url)
+            resp = requests.get(url, timeout=self.timeout)
+            resp.raise_for_status()
+            csv_path.write_bytes(resp.content)
+        return pd.read_csv(
+            csv_path,
+            dtype={"LEAID": str, "STATEFP": str, "STATEFIPS": str},
+            low_memory=False,
+        )

@@ -24,11 +24,11 @@ class LoadDecennialTestBase(TestCase):
         from socialwarehouse.demographic.models import DecennialVariable
         from socialwarehouse.geo.models import CensusDecadalVintage
 
-        self.vintage = CensusDecadalVintage.objects.filter(year=2020).first()
+        self.vintage = CensusDecadalVintage.objects.filter(decade=2020).first()
         if self.vintage is None:
             from datetime import date
             self.vintage = CensusDecadalVintage.objects.create(
-                year=2020,
+                decade=2020,
                 effective_from=date(2020, 4, 1),
                 effective_to=date(2030, 4, 1),
             )

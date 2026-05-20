@@ -90,12 +90,12 @@ class Command(BaseCommand):
 
         api_dataset = f"dec/{dataset}"
         self.stdout.write(
-            f"Fetching {api_dataset} year={vintage.year} state={state_fips} "
+            f"Fetching {api_dataset} year={vintage.decade} state={state_fips} "
             f"geography={geography} variables={len(var_codes)}"
         )
 
         df = self._fetch_via_su(
-            variables=var_codes, year=vintage.year, dataset=api_dataset,
+            variables=var_codes, year=vintage.decade, dataset=api_dataset,
             geography=geography, state_fips=state_fips, county_fips=county_fips,
         )
         if df is None or df.empty:

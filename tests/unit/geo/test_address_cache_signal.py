@@ -244,3 +244,94 @@ class TestMultiWriteIntegration(TestCase):
         )
         addr.refresh_from_db()
         assert addr.cd_geoid == "0103"
+
+
+class TestSignalMaintainsCensusYear(TestCase):
+    """SW#100: census_year is signal-maintained from census-decadal vintages.
+
+    Pins:
+    - census-decadal ABP writes update Address.census_year to the
+      vintage's decade.
+    - Other vintage kinds (ACS / BLS / redistricting) do NOT update
+      census_year.
+    - Historical (non-current) census-decadal vintages do NOT update
+      census_year (the cache is current-by-construction).
+    """
+
+    def setUp(self):
+        from datetime import date
+        from socialwarehouse.geo.models import (
+            Address, ACSVintage, CensusDecadalVintage,
+        )
+        self.vintage_2020 = CensusDecadalVintage.objects.get(decade=2020)
+        self.vintage_2010 = CensusDecadalVintage.objects.get(decade=2010)
+        # Address starts at the module-default (2020); force to 2010 so
+        # the test detects the signal-driven bump explicitly.
+        self.addr = Address.objects.create(
+            state_abbreviation="CA", census_year=2010,
+        )
+        self.acs_vintage = ACSVintage.objects.filter(
+            span_years=5,
+        ).order_by("-end_year").first()
+        assert self.acs_vintage is not None
+
+    def test_current_decadal_write_bumps_census_year(self):
+        from socialwarehouse.geo.models import AddressBoundaryPeriod
+
+        AddressBoundaryPeriod.objects.create(
+            address=self.addr,
+            vintage=self.vintage_2020,
+            cd_geoid="0610",
+            assignment_method="SPATIAL_JOIN",
+        )
+        self.addr.refresh_from_db()
+        assert self.addr.census_year == 2020
+
+    def test_historical_decadal_write_does_not_touch_census_year(self):
+        from socialwarehouse.geo.models import AddressBoundaryPeriod
+
+        AddressBoundaryPeriod.objects.create(
+            address=self.addr,
+            vintage=self.vintage_2010,
+            cd_geoid="0610",
+            assignment_method="SPATIAL_JOIN",
+        )
+        self.addr.refresh_from_db()
+        # Historical write — signal bails out before any cache update.
+        assert self.addr.census_year == 2010
+
+    def test_acs_vintage_write_does_not_touch_census_year(self):
+        """ACSVintage is current but is not a census-decadal kind;
+        census_year stays put."""
+        from socialwarehouse.geo.models import AddressBoundaryPeriod
+
+        AddressBoundaryPeriod.objects.create(
+            address=self.addr,
+            vintage=self.acs_vintage,
+            cd_geoid="0610",
+            assignment_method="SPATIAL_JOIN",
+        )
+        self.addr.refresh_from_db()
+        assert self.addr.census_year == 2010
+
+
+class TestCensusYearFromVintageHelper(TestCase):
+    """Direct unit tests on the kind-discriminating helper."""
+
+    def test_returns_decade_for_census_decadal(self):
+        from socialwarehouse.geo.models import CensusDecadalVintage
+        from socialwarehouse.geo.signals import _census_year_from_vintage
+
+        v = CensusDecadalVintage.objects.get(decade=2020)
+        assert _census_year_from_vintage(v) == 2020
+
+    def test_returns_none_for_acs(self):
+        from socialwarehouse.geo.models import ACSVintage
+        from socialwarehouse.geo.signals import _census_year_from_vintage
+
+        v = ACSVintage.objects.filter(span_years=5).first()
+        assert _census_year_from_vintage(v) is None
+
+    def test_returns_none_for_none(self):
+        from socialwarehouse.geo.signals import _census_year_from_vintage
+        assert _census_year_from_vintage(None) is None

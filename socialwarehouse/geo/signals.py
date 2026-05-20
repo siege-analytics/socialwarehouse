@@ -57,6 +57,28 @@ def address_cache_refresh_disabled():
         _signal_state.disabled = prev
 
 
+def _census_year_from_vintage(vintage):
+    """Return decade int from a census-decadal vintage, else None.
+
+    SW#100: Address.census_year is the canonical denormalized year hint
+    for the address. The signal maintains it from the polymorphic Vintage
+    parent — only census-decadal kinds update census_year (ACS / BLS /
+    redistricting vintages do not represent "the Census decade").
+
+    `vintage` may be either the parent `Vintage` instance (from an ABP
+    FK access) or the `CensusDecadalVintage` subclass directly.
+    """
+    if vintage is None or vintage.kind != "census-decadal":
+        return None
+    # Subclass instance — `decade` is a direct attribute.
+    decade = getattr(vintage, "decade", None)
+    if decade is not None:
+        return decade
+    # Parent Vintage — downcast.
+    decadal = getattr(vintage, "censusdecadalvintage", None)
+    return decadal.decade if decadal is not None else None
+
+
 def _is_current_vintage(vintage, today=None):
     """Return True if `vintage`'s effective window contains today.
 
@@ -107,6 +129,20 @@ def refresh_address_caches(addresses, today=None):
                 setattr(addr, cache_field, new_value)
                 dirty_fields.append(cache_field)
 
+        # SW#100: maintain census_year from the most recent census-decadal
+        # ABP row's vintage. boundaries_on returns the per-type ABP rows
+        # that are active today; any of them tied to a census-decadal
+        # vintage tells us the decade.
+        for row in result.values():
+            if row is None:
+                continue
+            year = _census_year_from_vintage(row.vintage)
+            if year is not None and addr.census_year != year:
+                addr.census_year = year
+                if "census_year" not in dirty_fields:
+                    dirty_fields.append("census_year")
+                break
+
         if dirty_fields:
             addr.save(update_fields=dirty_fields)
             updated_count += 1
@@ -142,6 +178,12 @@ def _connect():
             if getattr(addr, cache_field) != new_value:
                 setattr(addr, cache_field, new_value)
                 dirty_fields.append(cache_field)
+
+        # SW#100: also maintain census_year from census-decadal vintages.
+        new_year = _census_year_from_vintage(instance.vintage)
+        if new_year is not None and addr.census_year != new_year:
+            addr.census_year = new_year
+            dirty_fields.append("census_year")
 
         if dirty_fields:
             addr.save(update_fields=dirty_fields)

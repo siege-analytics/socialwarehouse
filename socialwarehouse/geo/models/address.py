@@ -322,7 +322,7 @@ class Address(models.Model):
 
         return self
 
-    # F11 / SW#100 step-2 helpers: temporal boundary history.
+    # F11 / SW#100 step-2 + step-2b helpers: temporal boundary history.
     #
     # The Address-level GEOID fields (cd_geoid, sldl_geoid, ...) are a
     # cache of the *current* boundary assignment. The authoritative
@@ -330,10 +330,13 @@ class Address(models.Model):
     # and "every boundary this address has ever been in" is the
     # AddressBoundaryPeriod table, accessed through these helpers.
     #
-    # Until the step-2b signal lands, the cache may drift from the
-    # helper's answer when ABP is written without updating Address. Use
-    # the cache for hot-path filters; use the helpers when correctness
-    # against the temporal record matters.
+    # The cache is kept in lockstep with ABP writes by the signal in
+    # socialwarehouse/geo/signals.py (F11 step 2b). For new code:
+    #   - reading the *current* assignment, use addr.{type}_geoid
+    #     directly (fast-path; backed by the cache).
+    #   - reading as-of-date or full history, use boundary_on,
+    #     boundary_history, boundary_timeline, etc.
+    # Both paths return the same answer for the current case.
     _BOUNDARY_TYPES = (
         "state", "county", "tract", "block_group", "block",
         "vtd", "cd", "sldl", "sldu",
@@ -431,10 +434,12 @@ class Address(models.Model):
     def current_boundaries(self):
         """Sugar for :meth:`boundaries_on(today)`.
 
-        Once the F11 step-2b signal-driven cache refresh is in place,
+        With the F11 step-2b signal-driven cache refresh in place,
         ``current_boundaries()[btype].{btype}_geoid`` returns the same
-        value as ``self.{btype}_geoid`` for every type. Until then, the
-        helper is authoritative and the cache may lag.
+        value as ``self.{btype}_geoid`` for every type. The fast path
+        is reading the cached field directly; this method exists for
+        callers that want the ABP row's metadata (effective range, plan,
+        assignment_method) alongside the geoid.
 
         "Today" is ``django.utils.timezone.localdate()`` — the date
         in the active timezone (or settings.TIME_ZONE). At midnight

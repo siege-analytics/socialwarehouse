@@ -32,11 +32,45 @@ import threading
 from datetime import date
 
 from django.db.models.signals import post_save
-from django.dispatch import receiver
+from django.dispatch import Signal, receiver
 
 logger = logging.getLogger(__name__)
 
 _signal_state = threading.local()
+
+
+# SW#200: downstream cascade event.
+#
+# Fires after the F11 step-2b cache-coherence handler updates one or
+# more `Address.{type}_geoid` (or `Address.census_year`) fields. Lets
+# downstream consumers — e.g. the FEC analysis project's fact tables —
+# react to a coherent change without F11 needing to know about them.
+#
+# Kwargs:
+#   sender         — Address (the model class)
+#   instance       — Address (the row whose cache changed)
+#   dirty_fields   — list[str] of the field names that were updated
+#   source_abp     — AddressBoundaryPeriod | None — the ABP whose save
+#                    triggered the update; None when fired from the
+#                    bulk `refresh_address_caches` path.
+#
+# Contract:
+#   - In-process synchronous: subscribers run in the same DB transaction
+#     as the originating ABP write. Raise to roll back the originating
+#     write; return cleanly to commit.
+#   - Subscribers MUST be idempotent. The signal may fire on a no-op
+#     cache rewrite if a future refactor changes the dirty-detection.
+#   - Subscribers MUST NOT do slow I/O on the dispatch thread (HTTP
+#     calls, large batch DB writes). Enqueue background work and return.
+#
+# Runtime evolution note:
+#   When the FEC analysis project (or any subscriber) needs cross-process
+#   notification — Celery workers, Airflow DAG triggers — replace this
+#   in-process Django Signal with a Celery `send_task` (or equivalent
+#   broker dispatch) inside the same handler. Airflow can subscribe to
+#   the broker via a sensor task. The kwargs contract above is the
+#   stable interface; only the transport changes.
+address_boundary_cache_changed = Signal()
 
 
 @contextlib.contextmanager
@@ -146,6 +180,12 @@ def refresh_address_caches(addresses, today=None):
         if dirty_fields:
             addr.save(update_fields=dirty_fields)
             updated_count += 1
+            address_boundary_cache_changed.send(
+                sender=Address,
+                instance=addr,
+                dirty_fields=list(dirty_fields),
+                source_abp=None,
+            )
 
     return updated_count
 
@@ -190,4 +230,10 @@ def _connect():
             logger.debug(
                 "F11 step-2b: refreshed Address %s cache fields %s from ABP %s",
                 addr.pk, dirty_fields, instance.pk,
+            )
+            address_boundary_cache_changed.send(
+                sender=Address,
+                instance=addr,
+                dirty_fields=list(dirty_fields),
+                source_abp=instance,
             )

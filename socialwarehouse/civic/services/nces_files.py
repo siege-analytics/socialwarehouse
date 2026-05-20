@@ -54,6 +54,14 @@ CCD_F33_URL = (
     "https://nces.ed.gov/ccd/data/zip/sdf{end_2digit}_1a.zip"
 )
 
+# School-level CCD files (per F Phase 1b).
+CCD_SCHOOL_DIRECTORY_URL = (
+    "https://nces.ed.gov/ccd/data/zip/ccd_sch_029_{end_2digit}_l_1a.zip"
+)
+CCD_SCHOOL_NONFISCAL_URL = (
+    "https://nces.ed.gov/ccd/data/zip/ccd_sch_052_{end_2digit}_l_1a.zip"
+)
+
 
 class NCESFiles:
     """Thin wrapper around NCES CCD open data files (Phase 1a)."""
@@ -110,3 +118,21 @@ class NCESFiles:
         url = CCD_F33_URL.format(end_2digit=str(end)[-2:])
         path = self._download_zip(url, f"ccd_lea_finance_{school_year}")
         return pd.read_csv(path, dtype={"LEAID": str}, low_memory=False)
+
+    # ── School-level loaders (Phase 1b) ───────────────────────────────
+
+    def load_ccd_school_directory(self, school_year: str) -> pd.DataFrame:
+        start, end = self._parse_school_year(school_year)
+        url = CCD_SCHOOL_DIRECTORY_URL.format(end_2digit=str(end)[-2:])
+        path = self._download_zip(url, f"ccd_sch_directory_{school_year}")
+        return pd.read_csv(
+            path,
+            dtype={"NCESSCH": str, "LEAID": str, "STATEFIPS": str},
+            low_memory=False,
+        )
+
+    def load_ccd_school_nonfiscal(self, school_year: str) -> pd.DataFrame:
+        start, end = self._parse_school_year(school_year)
+        url = CCD_SCHOOL_NONFISCAL_URL.format(end_2digit=str(end)[-2:])
+        path = self._download_zip(url, f"ccd_sch_nonfiscal_{school_year}")
+        return pd.read_csv(path, dtype={"NCESSCH": str, "LEAID": str}, low_memory=False)

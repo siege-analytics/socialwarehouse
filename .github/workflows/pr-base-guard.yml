@@ -1,0 +1,58 @@
+name: PR Base Guard
+
+# SW#234: enforce "develop is origin of work, main is downstream."
+#
+# Fails PRs targeting `main` unless:
+#   - The head branch is `develop` (the legitimate promote pattern), OR
+#   - The PR carries a `hotfix-direct-to-main` label (maintainer
+#     consciously bypassing the rule for a hotfix).
+#
+# Catches the silent failure mode where `gh pr create` defaults to the
+# repo's default branch (main) and a feature PR lands on main without
+# the maintainer noticing.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+    branches:
+      - main
+
+jobs:
+  enforce-base:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify PR base is allowed for main
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          LABELS_JSON: ${{ toJSON(github.event.pull_request.labels) }}
+        run: |
+          set -eu
+
+          # Allow develop → main (the canonical promote pattern).
+          if [ "$HEAD_REF" = "develop" ]; then
+            echo "OK: head branch is develop (canonical promote)."
+            exit 0
+          fi
+
+          # Allow head branches that look like a promote (covers our
+          # `promote/develop-to-main` convention).
+          case "$HEAD_REF" in
+            promote/*|release/*|hotfix/*)
+              echo "OK: head branch '$HEAD_REF' matches release/promote/hotfix convention."
+              exit 0
+              ;;
+          esac
+
+          # Allow if the maintainer applied the explicit bypass label.
+          if echo "$LABELS_JSON" | grep -q '"name": "hotfix-direct-to-main"'; then
+            echo "OK: 'hotfix-direct-to-main' label present (maintainer bypass)."
+            exit 0
+          fi
+
+          # Otherwise fail with a clear message.
+          echo "::error::PR base is 'main' but head branch '$HEAD_REF' is not"
+          echo "::error::develop / promote / release / hotfix and the PR is not labeled"
+          echo "::error::'hotfix-direct-to-main'. Per SW#234, feature/fix PRs must"
+          echo "::error::target 'develop'. Re-target the PR base, or apply the"
+          echo "::error::'hotfix-direct-to-main' label if this is a deliberate hotfix."
+          exit 1

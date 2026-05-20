@@ -422,6 +422,16 @@ class Address(models.Model):
         "other_special_district",
     )
 
+    # SW#198: boundary types that are subject to redistricting, mapped
+    # to the SU RedistrictingPlan.chamber value that governs them.
+    # Other boundary types (state, county, tract, etc.) are not
+    # redistricted; the staleness predicate is meaningless for them.
+    _REDISTRICTING_CHAMBER_FOR_TYPE = {
+        "cd": "congress",
+        "sldl": "state_house",
+        "sldu": "state_senate",
+    }
+
     def boundary_history(self, boundary_type=None):
         """Every recorded boundary assignment for this address.
 
@@ -675,6 +685,91 @@ class Address(models.Model):
         from django.utils import timezone
 
         return self.geoid_on(boundary_type, timezone.localdate())
+
+    def is_redistricting_assignment_stale(self, boundary_type):
+        """True if the latest ABP for ``boundary_type`` was assigned
+        under an older redistricting plan than the one currently in
+        effect for this address's state.
+
+        **Latent assumption (SW#198):** "currently in effect" means
+        "the plan that would apply if an election were held at the
+        time of this call." That's resolved by
+        ``RedistrictingPlan.objects.for_date(state_fips, chamber, today)``,
+        which filters on ``effective_from <= today`` and
+        (``effective_to IS NULL OR effective_to > today``). Whether
+        those date columns accurately reflect election-applicability
+        depends on how the plan rows were populated upstream — bad
+        ingest data here will show up as silent false-negatives.
+
+        Returns ``False`` (not stale) when:
+          - ``boundary_type`` is not a redistricting type (``state``,
+            ``county``, etc.) — staleness is meaningless.
+          - This address has no ``state_geoid`` cached — can't
+            determine which state's plans to check.
+          - No ``RedistrictingPlan`` matches "in effect today" for the
+            state+chamber — no newer plan to point at; silence beats
+            alarm-without-information.
+          - No ABP exists for this boundary type — nothing has been
+            assigned, so nothing is stale.
+
+        Returns ``True`` only when both a current plan exists AND the
+        latest ABP for this type references a different plan (or no
+        plan at all). Raises ``ValueError`` for unknown
+        ``boundary_type``.
+
+        Currently O(1) DB reads per call. For "all stale addresses,"
+        iterate and filter; a SQL-level manager method is deferred
+        until an ops consumer surfaces.
+        """
+        if boundary_type not in self._BOUNDARY_TYPES:
+            raise ValueError(
+                f"Unknown boundary_type {boundary_type!r}; "
+                f"expected one of {self._BOUNDARY_TYPES}"
+            )
+
+        chamber = self._REDISTRICTING_CHAMBER_FOR_TYPE.get(boundary_type)
+        if chamber is None:
+            return False
+
+        state_fips = (self.state_geoid or "")[:2]
+        if len(state_fips) != 2:
+            return False
+
+        from django.utils import timezone
+
+        try:
+            from siege_utilities.geo.django.models import RedistrictingPlan
+        except ImportError:
+            return False
+
+        try:
+            current_plan = RedistrictingPlan.objects.for_date(
+                state_fips=state_fips,
+                chamber=chamber,
+                date=timezone.localdate(),
+            )
+        except Exception:
+            # SU#527: effective_from / effective_to columns are declared
+            # on the SU model but the SU migrations in pinned versions
+            # don't always create them. The documented fallback for "we
+            # can't resolve a current plan" is "not stale" — silence
+            # beats alarm-without-information. Same dodge pattern as
+            # `_safe_plan_name` above.
+            return False
+        if current_plan is None:
+            return False
+
+        latest_abp = (
+            self.boundary_periods
+            .filter(**{f"{boundary_type}_geoid__isnull": False})
+            .exclude(**{f"{boundary_type}_geoid": ""})
+            .order_by("-context_date", "-assigned_at")
+            .first()
+        )
+        if latest_abp is None:
+            return False
+
+        return latest_abp.redistricting_plan_id != current_plan.id
 
 
 # Backwards-compatible alias

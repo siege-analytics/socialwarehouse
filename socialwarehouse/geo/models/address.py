@@ -203,6 +203,50 @@ class Address(models.Model):
         help_text="NCES Local Education Agency (LEAID); for the district containing this address.",
     )
 
+    # ── Template-readiness C medium-priority batch (SW#191) ──────────────
+    # Per C Q2 = "one model per kind" for special_district. The upstream SU
+    # models are tracked in SU#535; these caches don't depend on SU shipping.
+    puma_geoid = models.CharField(
+        max_length=7, blank=True, default="",
+        help_text="Public Use Microdata Area GEOID (state FIPS + 5-digit PUMA code).",
+    )
+    urban_area_geoid = models.CharField(
+        max_length=5, blank=True, default="",
+        help_text="Census Urban Area GEOID (5-digit).",
+    )
+    fire_district_geoid = models.CharField(
+        max_length=10, blank=True, default="",
+        help_text="Fire protection district GEOID (per Census Special Districts file).",
+    )
+    water_district_geoid = models.CharField(
+        max_length=10, blank=True, default="",
+        help_text="Water supply district GEOID (per Census Special Districts file).",
+    )
+    hospital_district_geoid = models.CharField(
+        max_length=10, blank=True, default="",
+        help_text="Hospital district GEOID (per Census Special Districts file).",
+    )
+    library_district_geoid = models.CharField(
+        max_length=10, blank=True, default="",
+        help_text="Library district GEOID (per Census Special Districts file).",
+    )
+    cemetery_district_geoid = models.CharField(
+        max_length=10, blank=True, default="",
+        help_text="Cemetery district GEOID (per Census Special Districts file).",
+    )
+    mosquito_district_geoid = models.CharField(
+        max_length=10, blank=True, default="",
+        help_text="Mosquito abatement district GEOID (per Census Special Districts file).",
+    )
+    other_special_district_geoid = models.CharField(
+        max_length=10, blank=True, default="",
+        help_text=(
+            "Catch-all 'other' special district GEOID. Addresses can be in multiple "
+            "other-kind districts; this cache holds the most-recent assignment. "
+            "Callers needing the full list use Address.boundary_history(boundary_type='other_special_district')."
+        ),
+    )
+
     census_units_assigned_at = models.DateTimeField(null=True, blank=True)
 
     # ── Address construction timeline (TIGER ADDRFEAT) ──────────────────
@@ -365,6 +409,11 @@ class Address(models.Model):
         "vtd", "cd", "sldl", "sldu",
         # Template-readiness C high-priority batch (SW#191):
         "zcta", "place", "cbsa", "school_district",
+        # Template-readiness C medium-priority batch (SW#191):
+        "puma", "urban_area",
+        "fire_district", "water_district", "hospital_district",
+        "library_district", "cemetery_district", "mosquito_district",
+        "other_special_district",
     )
 
     def boundary_history(self, boundary_type=None):

@@ -152,6 +152,7 @@ You've got:
 - **Customize for your jurisdiction.** Once `manage.py template_init` lands (G.2, tracked at SW#195), the clone-and-rename step will produce a renamed instance with your project's name + a chosen state subset baked in.
 - **Add an ingest path for a data source we don't ship.** Use D/E/F's existing patterns as the template — each domain's `services/` and `management/commands/` directories show the shape.
 - **Bring your own boundary types.** SU's `geo.django.models.*` is the upstream home for new boundary models; SW adds the `{type}_geoid` cache field on Address + ABP.
+- **Cron a TIGER vintage refresh.** SU ships `siege_utilities.geo.providers.CensusTIGERProvider.list_available_vintages()` and `siege_utilities.geo.census.tiger_state.check_for_updates(state_file)` for "is a new TIGER vintage published?" checks. Wire those into your scheduler; on a "yes," call `CensusTIGERProvider.get_boundary(...)` for the levels you want. (SW used to ship `scripts/fetch_census_tiger.py` for this; deleted in favor of the SU helpers.)
 
 ## References
 

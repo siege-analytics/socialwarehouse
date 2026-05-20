@@ -254,156 +254,165 @@ class Command(BaseCommand):
         assigned = 0
         failed = 0
 
-        for i in range(0, len(addr_ids), batch_size):
-            batch_ids = addr_ids[i:i + batch_size]
-            batch_num = i // batch_size + 1
-            batch_addrs = Address.objects.filter(pk__in=batch_ids)
+        # F11 step 2b: this command already updates Address.{type}_geoid
+        # explicitly (addr.save() below). The post-ABP signal would
+        # otherwise SELECT each Address again to check for the same
+        # values we just wrote. Suppress the signal for the duration
+        # of the batch loop; the per-row addr.save() keeps the cache
+        # coherent without it.
+        from socialwarehouse.geo.signals import address_cache_refresh_disabled
 
-            self.stdout.write(f"Batch {batch_num}: processing {len(batch_ids)} addresses...")
+        with address_cache_refresh_disabled():
+            for i in range(0, len(addr_ids), batch_size):
+                batch_ids = addr_ids[i:i + batch_size]
+                batch_num = i // batch_size + 1
+                batch_addrs = Address.objects.filter(pk__in=batch_ids)
 
-            for addr in batch_addrs:
-                try:
-                    if not addr.geom:
+                self.stdout.write(f"Batch {batch_num}: processing {len(batch_ids)} addresses...")
+
+                for addr in batch_addrs:
+                    try:
+                        if not addr.geom:
+                            failed += 1
+                            continue
+
+                        # GeoDjango: transform mutates the point in place; clone first.
+                        query_point = addr.geom.clone()
+                        query_point.transform(4269)
+
+                        # --- Static boundaries (same regardless of plan) ---
+                        s = State.objects.filter(geom__contains=query_point, vintage_year=year).first()
+                        if not s:
+                            failed += 1
+                            continue
+
+                        state_geoid = s.geoid
+                        county_geoid = tract_geoid = bg_geoid = vtd_geoid = None
+
+                        c = County.objects.filter(geom__contains=query_point, vintage_year=year).first()
+                        if c:
+                            county_geoid = c.geoid
+                            t = Tract.objects.filter(geom__contains=query_point, vintage_year=year).first()
+                            if t:
+                                tract_geoid = t.geoid
+                                bg = BlockGroup.objects.filter(geom__contains=query_point, vintage_year=year).first()
+                                if bg:
+                                    bg_geoid = bg.geoid
+                            vtd = VTD.objects.filter(geom__contains=query_point, vintage_year=year).first()
+                            if vtd:
+                                vtd_geoid = vtd.geoid
+
+                        # --- Political boundaries (plan-dependent) ---
+                        cd_geoid = sldl_geoid = sldu_geoid = None
+                        plan_cd = plan_sldl = plan_sldu = None
+                        active_plan = None
+                        method = "SPATIAL_JOIN"
+
+                        if plan_aware and s.state_fips:
+                            # Check for active congressional plan
+                            congress_plan = active_plans.get((s.state_fips, "congress"))
+                            if congress_plan:
+                                active_plan = congress_plan
+                                pd = PlanDistrict.objects.filter(
+                                    plan=congress_plan, geom__contains=query_point
+                                ).first()
+                                if pd:
+                                    cd_geoid = pd.geoid or pd.district_number
+                                    plan_cd = pd
+                                    method = "PLAN_SPATIAL_JOIN"
+
+                            # Check for active state senate plan
+                            senate_plan = active_plans.get((s.state_fips, "state_senate"))
+                            if senate_plan:
+                                pd = PlanDistrict.objects.filter(
+                                    plan=senate_plan, geom__contains=query_point
+                                ).first()
+                                if pd:
+                                    sldu_geoid = pd.geoid or pd.district_number
+                                    plan_sldu = pd
+
+                            # Check for active state house plan
+                            house_plan = active_plans.get((s.state_fips, "state_house"))
+                            if house_plan:
+                                pd = PlanDistrict.objects.filter(
+                                    plan=house_plan, geom__contains=query_point
+                                ).first()
+                                if pd:
+                                    sldl_geoid = pd.geoid or pd.district_number
+                                    plan_sldl = pd
+
+                        # Fall back to Census boundaries for any political level not resolved by plan
+                        if not cd_geoid:
+                            cd = CongressionalDistrict.objects.filter(
+                                geom__contains=query_point, vintage_year=year
+                            ).first()
+                            if cd:
+                                cd_geoid = cd.geoid
+
+                        if not sldl_geoid:
+                            sldl = StateLegislativeLower.objects.filter(
+                                geom__contains=query_point, vintage_year=year
+                            ).first()
+                            if sldl:
+                                sldl_geoid = sldl.geoid
+
+                        if not sldu_geoid:
+                            sldu = StateLegislativeUpper.objects.filter(
+                                geom__contains=query_point, vintage_year=year
+                            ).first()
+                            if sldu:
+                                sldu_geoid = sldu.geoid
+
+                        # --- Store on Address (backward compat) ---
+                        addr.state_geoid = state_geoid
+                        addr.county_geoid = county_geoid
+                        addr.tract_geoid = tract_geoid
+                        addr.block_group_geoid = bg_geoid
+                        addr.vtd_geoid = vtd_geoid
+                        addr.cd_geoid = cd_geoid
+                        addr.sldl_geoid = sldl_geoid
+                        addr.sldu_geoid = sldu_geoid
+                        addr.census_year = year
+                        addr.census_units_assigned_at = timezone.now()
+
+                        # Populate FKs in memory BEFORE the save so the geoid
+                        # changes and the FK assignments share a single UPDATE.
+                        # Post-F4/F5 (SW#93+#94) populate_foreign_keys() no
+                        # longer saves; callers are responsible for persistence.
+                        if populate_fks:
+                            addr.populate_foreign_keys()
+
+                        addr.save()
+
+                        # --- Create/update AddressBoundaryPeriod ---
+                        if vintage_config:
+                            period, _ = AddressBoundaryPeriod.objects.update_or_create(
+                                address=addr,
+                                vintage=vintage_config,
+                                redistricting_plan=active_plan,
+                                defaults={
+                                    "context_date": context_date,
+                                    "congressional_term_id": None,  # TODO: resolve from context_date
+                                    "state_geoid": state_geoid,
+                                    "county_geoid": county_geoid,
+                                    "tract_geoid": tract_geoid,
+                                    "block_group_geoid": bg_geoid,
+                                    "vtd_geoid": vtd_geoid,
+                                    "cd_geoid": cd_geoid,
+                                    "sldl_geoid": sldl_geoid,
+                                    "sldu_geoid": sldu_geoid,
+                                    "plan_district_cd": plan_cd,
+                                    "plan_district_sldl": plan_sldl,
+                                    "plan_district_sldu": plan_sldu,
+                                    "assignment_method": method,
+                                },
+                            )
+
+                        assigned += 1
+
+                    except Exception as e:
+                        logger.error("Failed to assign boundaries for %s: %s", addr.pk, e)
                         failed += 1
-                        continue
-
-                    # GeoDjango: transform mutates the point in place; clone first.
-                    query_point = addr.geom.clone()
-                    query_point.transform(4269)
-
-                    # --- Static boundaries (same regardless of plan) ---
-                    s = State.objects.filter(geom__contains=query_point, vintage_year=year).first()
-                    if not s:
-                        failed += 1
-                        continue
-
-                    state_geoid = s.geoid
-                    county_geoid = tract_geoid = bg_geoid = vtd_geoid = None
-
-                    c = County.objects.filter(geom__contains=query_point, vintage_year=year).first()
-                    if c:
-                        county_geoid = c.geoid
-                        t = Tract.objects.filter(geom__contains=query_point, vintage_year=year).first()
-                        if t:
-                            tract_geoid = t.geoid
-                            bg = BlockGroup.objects.filter(geom__contains=query_point, vintage_year=year).first()
-                            if bg:
-                                bg_geoid = bg.geoid
-                        vtd = VTD.objects.filter(geom__contains=query_point, vintage_year=year).first()
-                        if vtd:
-                            vtd_geoid = vtd.geoid
-
-                    # --- Political boundaries (plan-dependent) ---
-                    cd_geoid = sldl_geoid = sldu_geoid = None
-                    plan_cd = plan_sldl = plan_sldu = None
-                    active_plan = None
-                    method = "SPATIAL_JOIN"
-
-                    if plan_aware and s.state_fips:
-                        # Check for active congressional plan
-                        congress_plan = active_plans.get((s.state_fips, "congress"))
-                        if congress_plan:
-                            active_plan = congress_plan
-                            pd = PlanDistrict.objects.filter(
-                                plan=congress_plan, geom__contains=query_point
-                            ).first()
-                            if pd:
-                                cd_geoid = pd.geoid or pd.district_number
-                                plan_cd = pd
-                                method = "PLAN_SPATIAL_JOIN"
-
-                        # Check for active state senate plan
-                        senate_plan = active_plans.get((s.state_fips, "state_senate"))
-                        if senate_plan:
-                            pd = PlanDistrict.objects.filter(
-                                plan=senate_plan, geom__contains=query_point
-                            ).first()
-                            if pd:
-                                sldu_geoid = pd.geoid or pd.district_number
-                                plan_sldu = pd
-
-                        # Check for active state house plan
-                        house_plan = active_plans.get((s.state_fips, "state_house"))
-                        if house_plan:
-                            pd = PlanDistrict.objects.filter(
-                                plan=house_plan, geom__contains=query_point
-                            ).first()
-                            if pd:
-                                sldl_geoid = pd.geoid or pd.district_number
-                                plan_sldl = pd
-
-                    # Fall back to Census boundaries for any political level not resolved by plan
-                    if not cd_geoid:
-                        cd = CongressionalDistrict.objects.filter(
-                            geom__contains=query_point, vintage_year=year
-                        ).first()
-                        if cd:
-                            cd_geoid = cd.geoid
-
-                    if not sldl_geoid:
-                        sldl = StateLegislativeLower.objects.filter(
-                            geom__contains=query_point, vintage_year=year
-                        ).first()
-                        if sldl:
-                            sldl_geoid = sldl.geoid
-
-                    if not sldu_geoid:
-                        sldu = StateLegislativeUpper.objects.filter(
-                            geom__contains=query_point, vintage_year=year
-                        ).first()
-                        if sldu:
-                            sldu_geoid = sldu.geoid
-
-                    # --- Store on Address (backward compat) ---
-                    addr.state_geoid = state_geoid
-                    addr.county_geoid = county_geoid
-                    addr.tract_geoid = tract_geoid
-                    addr.block_group_geoid = bg_geoid
-                    addr.vtd_geoid = vtd_geoid
-                    addr.cd_geoid = cd_geoid
-                    addr.sldl_geoid = sldl_geoid
-                    addr.sldu_geoid = sldu_geoid
-                    addr.census_year = year
-                    addr.census_units_assigned_at = timezone.now()
-
-                    # Populate FKs in memory BEFORE the save so the geoid
-                    # changes and the FK assignments share a single UPDATE.
-                    # Post-F4/F5 (SW#93+#94) populate_foreign_keys() no
-                    # longer saves; callers are responsible for persistence.
-                    if populate_fks:
-                        addr.populate_foreign_keys()
-
-                    addr.save()
-
-                    # --- Create/update AddressBoundaryPeriod ---
-                    if vintage_config:
-                        period, _ = AddressBoundaryPeriod.objects.update_or_create(
-                            address=addr,
-                            vintage=vintage_config,
-                            redistricting_plan=active_plan,
-                            defaults={
-                                "context_date": context_date,
-                                "congressional_term_id": None,  # TODO: resolve from context_date
-                                "state_geoid": state_geoid,
-                                "county_geoid": county_geoid,
-                                "tract_geoid": tract_geoid,
-                                "block_group_geoid": bg_geoid,
-                                "vtd_geoid": vtd_geoid,
-                                "cd_geoid": cd_geoid,
-                                "sldl_geoid": sldl_geoid,
-                                "sldu_geoid": sldu_geoid,
-                                "plan_district_cd": plan_cd,
-                                "plan_district_sldl": plan_sldl,
-                                "plan_district_sldu": plan_sldu,
-                                "assignment_method": method,
-                            },
-                        )
-
-                    assigned += 1
-
-                except Exception as e:
-                    logger.error("Failed to assign boundaries for %s: %s", addr.pk, e)
-                    failed += 1
 
             self.stdout.write(f"  Batch {batch_num} done: {assigned} assigned, {failed} failed")
 

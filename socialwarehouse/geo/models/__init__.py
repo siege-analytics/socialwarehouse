@@ -15,6 +15,7 @@ from .vintages import (
     BEARegionalVintage,
     BLSQCEWVintage,
     CensusDecadalVintage,
+    IRSSOIVintage,
     NCESSchoolYearVintage,
     RedistrictingPlanVintage,
     Vintage,
@@ -37,4 +38,5 @@ __all__ = [
     "BEARegionalVintage",
     "NCESSchoolYearVintage",
     "RedistrictingPlanVintage",
+    "IRSSOIVintage",
 ]

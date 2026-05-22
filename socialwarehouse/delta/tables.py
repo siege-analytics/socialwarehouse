@@ -11,10 +11,12 @@ Each table is defined as a schema + path + partitioning strategy.
 
 from pyspark.sql.types import (
     BooleanType,
+    DateType,
     DecimalType,
     DoubleType,
     IntegerType,
     LongType,
+    MapType,
     StringType,
     StructField,
     StructType,
@@ -40,6 +42,33 @@ BRONZE_ADDRESSES = StructType([
     StructField("source_row", IntegerType(), True),
     StructField("ingested_at", TimestampType(), False),
 ])
+
+## Per-vendor voter-file bronze (SW#251).
+##
+## Bronze stores the full vendor row as JSON in the `raw` column. The
+## four supported vendors (PDI, L2, Catalist, TargetSmart) have
+## hundreds of mostly-non-overlapping columns each — a union'd table
+## would be 1000+ nullable columns with poor column-prune behavior.
+## Per-vendor bronze keeps each importer schema close to its native
+## shape. Silver does the canonical unification.
+##
+## Schema-evolution: bronze is JSON-stringified, so vendor-side
+## column changes do not require bronze schema migrations. Bronze
+## evolution is restricted to the metadata fields below.
+_BRONZE_VOTER_FILE_FIELDS = [
+    StructField("vendor_voter_id", StringType(), False),
+    StructField("state_abbreviation", StringType(), False),
+    StructField("raw", StringType(), False),
+    StructField("source_file", StringType(), True),
+    StructField("source_row", LongType(), True),
+    StructField("ingested_at", TimestampType(), False),
+]
+
+BRONZE_VOTER_FILE_TS = StructType(_BRONZE_VOTER_FILE_FIELDS)
+BRONZE_VOTER_FILE_L2 = StructType(_BRONZE_VOTER_FILE_FIELDS)
+BRONZE_VOTER_FILE_CATALIST = StructType(_BRONZE_VOTER_FILE_FIELDS)
+BRONZE_VOTER_FILE_PDI = StructType(_BRONZE_VOTER_FILE_FIELDS)
+
 
 BRONZE_BOUNDARIES = StructType([
     StructField("geoid", StringType(), False),
@@ -106,6 +135,100 @@ SILVER_DEMOGRAPHICS = StructType([
 ])
 
 
+## Silver Person / score / vote-history (SW#251).
+##
+## Canonical, typed, vendor-neutral. One row per (vendor, vendor_voter_id):
+## same physical voter from two vendors yields two silver rows. Cross-
+## vendor probabilistic matching is a follow-on; the schema permits it
+## without rewrites by adding a `canonical_person_id` column later.
+##
+## `vendor_extras` Map<String, String> holds vendor-divergent fields
+## that have not been promoted to canonical columns. See
+## docs/warehouse-schema-evolution.md for the promotion playbook.
+
+SILVER_PERSONS = StructType([
+    # Natural key
+    StructField("vendor", StringType(), False),
+    StructField("vendor_voter_id", StringType(), False),
+    StructField("person_key", StringType(), False),
+    # Identity
+    StructField("first_name", StringType(), True),
+    StructField("middle_name", StringType(), True),
+    StructField("last_name", StringType(), True),
+    StructField("name_suffix", StringType(), True),
+    StructField("dob", DateType(), True),
+    StructField("gender", StringType(), True),
+    StructField("ethnicity", StringType(), True),
+    StructField("language", StringType(), True),
+    # Registration
+    StructField("registration_status", StringType(), True),
+    StructField("registration_state", StringType(), False),
+    StructField("registration_date", DateType(), True),
+    StructField("party_registration", StringType(), True),
+    StructField("voter_status_reason", StringType(), True),
+    # Address (resolved to canonical via geo pipeline)
+    StructField("address_id", LongType(), True),
+    StructField("address_line1", StringType(), True),
+    StructField("address_line2", StringType(), True),
+    StructField("city", StringType(), True),
+    StructField("zip5", StringType(), True),
+    StructField("zip4", StringType(), True),
+    StructField("latitude", DoubleType(), True),
+    StructField("longitude", DoubleType(), True),
+    # Pre-joined geoids (vendor pre-joins trusted on ingest; refreshed
+    # on redistricting-plan change)
+    StructField("census_year", IntegerType(), True),
+    StructField("state_geoid", StringType(), True),
+    StructField("county_geoid", StringType(), True),
+    StructField("tract_geoid", StringType(), True),
+    StructField("block_group_geoid", StringType(), True),
+    StructField("vtd_geoid", StringType(), True),
+    StructField("cd_geoid", StringType(), True),
+    StructField("sldl_geoid", StringType(), True),
+    StructField("sldu_geoid", StringType(), True),
+    StructField("zcta_geoid", StringType(), True),
+    # Household
+    StructField("household_id", StringType(), True),
+    StructField("household_size", IntegerType(), True),
+    StructField("is_head_of_household", BooleanType(), True),
+    # Vote-history aggregates (computed by silver build from
+    # silver.vote_history; denormalized for query speed)
+    StructField("general_election_count", IntegerType(), True),
+    StructField("primary_election_count", IntegerType(), True),
+    StructField("total_vote_count", IntegerType(), True),
+    StructField("last_voted_at", DateType(), True),
+    StructField("vote_frequency_category", StringType(), True),
+    # Evolvable vendor extension bag (see schema-evolution doc)
+    StructField("vendor_extras", MapType(StringType(), StringType()), True),
+    # Provenance
+    StructField("source_file", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+    StructField("silver_built_at", TimestampType(), False),
+])
+
+
+SILVER_PERSON_SCORES = StructType([
+    StructField("person_key", StringType(), False),
+    StructField("score_type", StringType(), False),
+    StructField("value", DoubleType(), False),
+    StructField("source_vendor", StringType(), False),
+    StructField("methodology_version", StringType(), False),
+    StructField("scored_at", TimestampType(), True),
+    StructField("loaded_at", TimestampType(), False),
+])
+
+
+SILVER_VOTE_HISTORY = StructType([
+    StructField("person_key", StringType(), False),
+    StructField("election_date", DateType(), False),
+    StructField("election_year", IntegerType(), False),
+    StructField("election_type", StringType(), False),
+    StructField("voted_method", StringType(), True),
+    StructField("source_vendor", StringType(), False),
+    StructField("loaded_at", TimestampType(), False),
+])
+
+
 # ── Gold schemas ─────────────────────────────────────────────────────────
 
 GOLD_ENRICHED_ADDRESSES = StructType([
@@ -153,6 +276,30 @@ TABLES = {
         "partition_by": ["summary_level", "vintage_year"],
         "description": "Raw Census TIGER/Line boundary data",
     },
+    "bronze.voter_file_ts": {
+        "schema": BRONZE_VOTER_FILE_TS,
+        "path": get_table_path("bronze", "voter_file_ts"),
+        "partition_by": ["state_abbreviation"],
+        "description": "Raw TargetSmart voter-file rows (JSON-stringified)",
+    },
+    "bronze.voter_file_l2": {
+        "schema": BRONZE_VOTER_FILE_L2,
+        "path": get_table_path("bronze", "voter_file_l2"),
+        "partition_by": ["state_abbreviation"],
+        "description": "Raw L2 voter-file rows (JSON-stringified)",
+    },
+    "bronze.voter_file_catalist": {
+        "schema": BRONZE_VOTER_FILE_CATALIST,
+        "path": get_table_path("bronze", "voter_file_catalist"),
+        "partition_by": ["state_abbreviation"],
+        "description": "Raw Catalist voter-file rows (JSON-stringified)",
+    },
+    "bronze.voter_file_pdi": {
+        "schema": BRONZE_VOTER_FILE_PDI,
+        "path": get_table_path("bronze", "voter_file_pdi"),
+        "partition_by": ["state_abbreviation"],
+        "description": "Raw PDI voter-file rows (JSON-stringified)",
+    },
     # Silver
     "silver.addresses": {
         "schema": SILVER_ADDRESSES,
@@ -165,6 +312,24 @@ TABLES = {
         "path": get_table_path("silver", "demographics"),
         "partition_by": ["summary_level", "vintage_year"],
         "description": "Census ACS/Decennial estimates by geography",
+    },
+    "silver.persons": {
+        "schema": SILVER_PERSONS,
+        "path": get_table_path("silver", "persons"),
+        "partition_by": ["registration_state", "vendor"],
+        "description": "Canonical voter records, vendor-neutral, address-resolved",
+    },
+    "silver.person_scores": {
+        "schema": SILVER_PERSON_SCORES,
+        "path": get_table_path("silver", "person_scores"),
+        "partition_by": ["source_vendor", "score_type"],
+        "description": "Temporal-versioned scores per person, source-vendor-tagged",
+    },
+    "silver.vote_history": {
+        "schema": SILVER_VOTE_HISTORY,
+        "path": get_table_path("silver", "vote_history"),
+        "partition_by": ["election_year", "source_vendor"],
+        "description": "Per-person per-election vote events",
     },
     # Gold
     "gold.enriched_addresses": {

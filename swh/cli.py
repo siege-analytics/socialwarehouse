@@ -311,5 +311,40 @@ def fec_centrality(graph_input_path, party):
     click.echo("FEC centrality reports written.")
 
 
+@cli.command("ingest-voter-file")
+@click.option("--vendor", type=click.Choice(["ts"]), required=True, help="Vendor format (currently only 'ts'; L2/Catalist/PDI follow in sub-issues C-E of #250)")
+@click.option("--file", "csv_path", type=click.Path(exists=True), required=True, help="Path to the vendor's voter-file CSV")
+@click.option("--state", required=True, help="2-char USPS state code (e.g. TX); becomes the bronze partition key")
+@click.option("--skip-silver", is_flag=True, default=False, help="Run bronze ingest only; skip the silver.persons build (for staged loads)")
+def ingest_voter_file(vendor, csv_path, state, skip_silver):
+    """Ingest a vendor voter file through the medallion pipeline.
+
+    Currently supports TargetSmart format. Vendor CSV -> bronze.voter_file_<vendor>
+    (raw row as JSON) -> silver.persons (canonical, vendor-neutral).
+
+    Score extraction and vote-history extraction land in sub-issues B.2 / B.3
+    of #250; PostGIS materialization lands in B.4. This command is the
+    thin spine that puts canonical rows in silver.persons for #257.
+
+    Example:
+        swh ingest-voter-file --vendor ts --file /data/inputs/TX_voters.csv --state TX
+    """
+    if vendor != "ts":
+        raise click.UsageError(f"Vendor {vendor!r} is not yet supported; only 'ts' ships in #257.")
+
+    from swh.voters.ts import build_silver_persons, ingest_bronze
+
+    click.echo(f"Bronze ingest: vendor={vendor} file={csv_path} state={state}")
+    spark = settings.spark.build_session()
+    try:
+        n_bronze = ingest_bronze(spark, csv_path=csv_path, state=state)
+        click.echo(f"Bronze rows appended: {n_bronze}")
+        if not skip_silver:
+            n_silver = build_silver_persons(spark)
+            click.echo(f"Silver rows upserted: {n_silver}")
+    finally:
+        spark.stop()
+
+
 if __name__ == "__main__":
     cli()

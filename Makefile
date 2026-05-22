@@ -141,19 +141,6 @@ dev-env:  ## Print instructions for loading the SW dev shell environment
 # ---------------------------------------------------------------------------
 
 up-nominatim:  ## Start self-hosted Nominatim (first boot imports the PBF; ~15min for RI)
-	@# Enforce NOMINATIM_DB_PASSWORD at up-time (compose-level :? is
-	@# whole-file validated, would break unrelated builds). The
-	@# docker-compose.yml carries a clearly-not-a-credential placeholder
-	@# default so compose parses cleanly elsewhere; the real value MUST
-	@# be set here before we launch the actual nominatim service.
-	@if [ -z "$${NOMINATIM_DB_PASSWORD}" ] || [ "$${NOMINATIM_DB_PASSWORD}" = "PLACEHOLDER_SET_NOMINATIM_DB_PASSWORD_IN_DOT_ENV" ]; then \
-		echo "ERROR: NOMINATIM_DB_PASSWORD not set in .env."; \
-		echo "  Set it before bringing up nominatim, e.g.:"; \
-		echo "    echo \"NOMINATIM_DB_PASSWORD=\$$(openssl rand -base64 24)\" >> .env"; \
-		echo "  Then: make up-nominatim"; \
-		echo "  See docs/geocoding-self-host.md for the full bootstrap procedure."; \
-		exit 1; \
-	fi
 	$(DKC) --profile geocoding up -d nominatim
 	@echo ""
 	@echo "  Nominatim is starting. First boot performs the OSM PBF import"

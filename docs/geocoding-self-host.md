@@ -41,11 +41,12 @@ states wouldn't. So the bootstrap demo is small AND representative.
 
 ### 1. Set the required Nominatim DB password in `.env`
 
-`make up-nominatim` validates this is set before launching the
-container (per SW#32's lesson on default-credentials-in-git, the
-compose file uses a clearly-not-a-credential placeholder default
-that compose interpolates fine elsewhere, but the Makefile
-enforces a real value at up-time):
+`docker-compose.yml` uses `${NOMINATIM_DB_PASSWORD:?Set NOMINATIM_DB_PASSWORD in .env}`
+to fail-fast if unset — same precedent as the existing
+`NEO4J_PASSWORD` enforcement. SW#32 lesson:
+default-credentials-in-config files land in git on first commit,
+so the compose entry must require operator-set values not default
+to literals.
 
 ```bash
 echo "NOMINATIM_DB_PASSWORD=$(openssl rand -base64 24)" >> .env
@@ -178,18 +179,19 @@ the flag is the override.
 
 ## Troubleshooting
 
-### `make up-nominatim` says "NOMINATIM_DB_PASSWORD not set in .env"
+### `docker compose ... required variable NOMINATIM_DB_PASSWORD is missing a value`
 
-Add it to `.env`:
+Set it in `.env`:
 ```bash
 echo "NOMINATIM_DB_PASSWORD=$(openssl rand -base64 24)" >> .env
 ```
 
-The Makefile target checks that `NOMINATIM_DB_PASSWORD` is set to
-something other than the compose-file placeholder before launching.
-The placeholder default exists so unrelated compose invocations
-(e.g. `docker compose build python-computation web` in CI) don't
-fail on the geocoding-only env requirement.
+Compose validates the `:?` interpolation file-wide at parse time
+(same as `NEO4J_PASSWORD`), so any compose command — including
+unrelated ones like `docker compose build python-computation` —
+will fail if the var is unset. CI sets a placeholder in `.env`
+before invoking compose; operators set a real value per the
+`openssl rand` recipe above.
 
 ### Import has been running for an hour and not done
 

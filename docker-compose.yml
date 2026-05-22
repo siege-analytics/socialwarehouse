@@ -284,13 +284,11 @@ services:
       PBF_URL: ${NOMINATIM_PBF_URL:-https://download.geofabrik.de/north-america/us/rhode-island-latest.osm.pbf}
       IMPORT_TIGER_ADDRESSES: ${NOMINATIM_IMPORT_TIGER_ADDRESSES:-true}
       THREADS: ${NOMINATIM_THREADS:-4}
-      # The placeholder below is NOT a credential. Compose parses the
-      # whole file even for unrelated build/up calls, so a `:?`
-      # required-env directive would break those builds. Instead we
-      # use a clearly-not-a-credential placeholder that compose
-      # interpolates fine, AND enforce the real value at the
-      # `make up-nominatim` step. See docs/geocoding-self-host.md.
-      NOMINATIM_PASSWORD: ${NOMINATIM_DB_PASSWORD:-PLACEHOLDER_SET_NOMINATIM_DB_PASSWORD_IN_DOT_ENV}
+      # NOMINATIM_DB_PASSWORD must be set in .env — fail fast if missing.
+      # Same precedent as the Neo4j service above; CI workflow appends
+      # a placeholder value to .env before `compose build` so the
+      # whole-file validation succeeds for unrelated services.
+      NOMINATIM_PASSWORD: ${NOMINATIM_DB_PASSWORD:?Set NOMINATIM_DB_PASSWORD in .env}
     volumes:
       - swh_nominatim_data:/var/lib/postgresql/16/main
       - swh_nominatim_flatnode:/nominatim/flatnode

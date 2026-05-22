@@ -363,5 +363,58 @@ def ingest_voter_file(vendor, csv_path, state, skip_silver, include_scores, incl
         spark.stop()
 
 
+@cli.group("materialize-electoral")
+def materialize_electoral():
+    """Materialize silver electoral Delta tables into PostGIS star schema (B.4 of #250)."""
+
+
+@materialize_electoral.command("persons")
+def materialize_electoral_persons():
+    """Materialize silver.persons -> DimPerson."""
+    from swh.voters.materialize import materialize_persons
+    spark = settings.spark.build_session()
+    try:
+        n = materialize_persons(spark)
+        click.echo(f"DimPerson rows upserted: {n}")
+    finally:
+        spark.stop()
+
+
+@materialize_electoral.command("scores")
+def materialize_electoral_scores():
+    """Materialize silver.person_scores -> FactPersonScore."""
+    from swh.voters.materialize import materialize_scores
+    spark = settings.spark.build_session()
+    try:
+        n = materialize_scores(spark)
+        click.echo(f"FactPersonScore rows upserted: {n}")
+    finally:
+        spark.stop()
+
+
+@materialize_electoral.command("vote-history")
+def materialize_electoral_vote_history():
+    """Materialize silver.vote_history -> FactVoteHistory."""
+    from swh.voters.materialize import materialize_vote_history
+    spark = settings.spark.build_session()
+    try:
+        n = materialize_vote_history(spark)
+        click.echo(f"FactVoteHistory rows upserted: {n}")
+    finally:
+        spark.stop()
+
+
+@materialize_electoral.command("all")
+def materialize_electoral_all():
+    """Materialize all three electoral tables in dependency order."""
+    from swh.voters.materialize import materialize_all
+    spark = settings.spark.build_session()
+    try:
+        counts = materialize_all(spark)
+        click.echo(f"Materialization complete: {counts}")
+    finally:
+        spark.stop()
+
+
 if __name__ == "__main__":
     cli()

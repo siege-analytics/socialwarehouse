@@ -20,10 +20,15 @@ Usage:
         --states 48 --project-name myorg-warehouse
 
 NOTE: This wizard does NOT rename the Django package directory
-(`socialwarehouse/` -> `myproject/`). That step is tricky to do
-safely from the running Django process; it's documented as a
-manual rename step in docs/quickstart.md. The wizard handles
-everything else.
+(`socialwarehouse/` -> `myproject/`). For almost all forkers, the
+project-friendly identifier via `SW_PROJECT_NAME` env var (which
+this wizard writes) is sufficient; the package directory stays
+as `socialwarehouse/` so upstream merges keep working.
+
+If you genuinely need a renamed Django package, see the
+"Renaming the Django package (advanced)" section in
+docs/quickstart.md — the rename recipe + trade-offs are
+documented there.
 """
 
 from pathlib import Path
@@ -170,11 +175,13 @@ class Command(BaseCommand):
         self.stdout.write(f"  Seeded states: {states}")
         self.stdout.write("")
         self.stdout.write("Next steps:")
-        self.stdout.write("  1. (Optional) Rename the Django package directory if you want")
-        self.stdout.write("     a different module name. See docs/quickstart.md for the")
-        self.stdout.write("     manual rename steps.")
-        self.stdout.write("  2. Run `python manage.py createsuperuser` to set up admin access.")
-        self.stdout.write("  3. Run `python manage.py runserver` and visit http://localhost:8000/.")
+        self.stdout.write("  1. Run `python manage.py createsuperuser` to set up admin access.")
+        self.stdout.write("  2. Run `python manage.py runserver` and visit http://localhost:8000/.")
+        self.stdout.write("")
+        self.stdout.write("Note: SW_PROJECT_NAME in your .env is the project-friendly identifier;")
+        self.stdout.write("the Django package directory stays as `socialwarehouse/` so upstream")
+        self.stdout.write("merges keep working. If you genuinely need a renamed package, see the")
+        self.stdout.write("`Renaming the Django package (advanced)` section in docs/quickstart.md.")
 
     def _prompt(self, question, default):
         try:

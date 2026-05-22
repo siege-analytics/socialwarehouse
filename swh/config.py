@@ -110,6 +110,72 @@ class CensusSettings(BaseSettings):
         return [s.strip().zfill(2) for s in self.states.split(",")]
 
 
+class SparkSettings(BaseSettings):
+    """PySpark session settings, populated from SPARK_* env vars.
+
+    Defaults target local development (``local[*]``). The Docker
+    ``make up-spark`` profile injects a cluster master URL via
+    ``SPARK_MASTER``.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="SPARK_", env_file=".env", extra="ignore")
+
+    app_name: str = "socialwarehouse"
+    master: str = "local[*]"
+    driver_memory: str = "2g"
+    executor_memory: str = "2g"
+
+    def build_session(self):
+        """Build a configured ``SparkSession`` with the project's defaults.
+
+        Imports ``pyspark`` lazily so the rest of the project can read
+        ``settings`` without requiring PySpark to be installed.
+        """
+        from pyspark.sql import SparkSession
+
+        return (
+            SparkSession.builder
+            .appName(self.app_name)
+            .master(self.master)
+            .config("spark.driver.memory", self.driver_memory)
+            .config("spark.executor.memory", self.executor_memory)
+            .getOrCreate()
+        )
+
+
+class FECSettings(BaseSettings):
+    """FEC campaign-finance analysis paths, populated from FEC_* env vars.
+
+    Defaults target the cyberpower deployment (``/mnt/data/electinfo``).
+    Laptop / per-developer overrides come from env vars, not from a
+    ``WORKING_ON_LAPTOP`` boolean.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="FEC_", env_file=".env", extra="ignore")
+
+    base_path: str = "/mnt/data/electinfo"
+    bulk_subdir: str = "bulk"
+    graph_subdir: str = "graph"
+
+    @property
+    def bulk_path(self) -> str:
+        """Directory containing FEC bulk-data CSVs (per-cycle subdirs)."""
+        return f"{self.base_path}/{self.bulk_subdir}"
+
+    @property
+    def graph_path(self) -> str:
+        """Directory where the campaign-finance graph parquet lives.
+
+        ``build_graph`` writes vertices + edges parquet here;
+        ``committee_centrality`` reads from the same location. Pre-
+        modernization, build_graph wrote to ``bulk/exports`` while
+        centrality read from ``graph/`` — they couldn't run end-to-end
+        without a manual file move. This setting collapses both onto a
+        single canonical path.
+        """
+        return f"{self.base_path}/{self.graph_subdir}"
+
+
 class SocialWarehouseSettings(BaseSettings):
     """Top-level settings container.
 
@@ -125,6 +191,8 @@ class SocialWarehouseSettings(BaseSettings):
 
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     census: CensusSettings = Field(default_factory=CensusSettings)
+    spark: SparkSettings = Field(default_factory=SparkSettings)
+    fec: FECSettings = Field(default_factory=FECSettings)
 
 
 # Module-level singleton — import this in other modules.

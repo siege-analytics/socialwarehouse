@@ -229,6 +229,86 @@ def info():
     click.echo(f"Congress:        {settings.census.congress_number}")
     click.echo(f"States:          {settings.census.states}")
     click.echo(f"Boundary types:  {', '.join(settings.census.boundary_types)}")
+    click.echo(f"Spark master:    {settings.spark.master}")
+    click.echo(f"Spark app:       {settings.spark.app_name}")
+    click.echo(f"FEC bulk path:   {settings.fec.bulk_path}")
+    click.echo(f"FEC graph path:  {settings.fec.graph_path}")
+
+
+@cli.command("fec-build-graph")
+@click.option("--cycle", "-c", type=int, default=2024,
+              help="Election cycle first year (default: 2024)")
+@click.option("--bulk-path", default=None,
+              help="FEC bulk-data directory. Default: settings.fec.bulk_path "
+                   "(typically /mnt/data/electinfo/bulk).")
+@click.option("--graph-output-path", default=None,
+              help="Graph output directory. Default: settings.fec.graph_path "
+                   "(typically /mnt/data/electinfo/graph).")
+def fec_build_graph(cycle, bulk_path, graph_output_path):
+    """Build the FEC campaign-finance graph for an election cycle.
+
+    Reads FEC bulk-data CSVs from ``<bulk-path>/<cycle>/`` and writes
+    vertices + edges parquet to ``<graph-output-path>``. Requires the
+    Spark profile (run `make up-spark` first if Docker-based).
+
+    Example:
+        swh fec-build-graph --cycle 2024
+        swh fec-build-graph --cycle 2022 --bulk-path /data/electinfo/bulk
+    """
+    from swh.analysis.fec.build_graph import build_fec_graph
+
+    bulk_path = bulk_path or settings.fec.bulk_path
+    graph_output_path = graph_output_path or settings.fec.graph_path
+
+    click.echo(f"Building FEC graph: cycle={cycle}, bulk={bulk_path}, out={graph_output_path}")
+    spark = settings.spark.build_session()
+    try:
+        build_fec_graph(
+            spark=spark,
+            cycle=cycle,
+            bulk_path=bulk_path,
+            graph_output_path=graph_output_path,
+        )
+    finally:
+        spark.stop()
+    click.echo("FEC graph built.")
+
+
+@cli.command("fec-centrality")
+@click.option("--graph-input-path", default=None,
+              help="Directory containing the graph parquet written by "
+                   "fec-build-graph. Default: settings.fec.graph_path.")
+@click.option("--party", "-p", multiple=True, default=None,
+              help="Party code (DEM, REP, etc.). May be passed multiple "
+                   "times. Default: DEM + REP.")
+def fec_centrality(graph_input_path, party):
+    """Compute committee-centrality reports per party affiliation.
+
+    For each requested party, filters the FEC graph to its linked
+    committees, aggregates inter-committee transaction amounts, and
+    writes ``committee_centrality_<PARTY>`` to PostgreSQL via JDBC
+    using settings.database connection info.
+
+    Example:
+        swh fec-centrality
+        swh fec-centrality --party DEM --party REP --party IND
+    """
+    from swh.analysis.fec.committee_centrality import compute_committee_centrality
+
+    graph_input_path = graph_input_path or settings.fec.graph_path
+    party_filters = {p.lower(): p for p in party} if party else None
+
+    click.echo(f"Computing FEC centrality: graph={graph_input_path}, parties={party or 'DEM, REP'}")
+    spark = settings.spark.build_session()
+    try:
+        compute_committee_centrality(
+            spark=spark,
+            graph_input_path=graph_input_path,
+            party_filters=party_filters,
+        )
+    finally:
+        spark.stop()
+    click.echo("FEC centrality reports written.")
 
 
 if __name__ == "__main__":

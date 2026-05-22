@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "socialwarehouse"
-version = "2.1.1-dev"
+version = "2.2.1-dev"
 description = "Data warehouse and delta lake for geographic, demographic, and civic data — the DSTK replacement"
 readme = "README.md"
 license = {text = "Proprietary"}

@@ -22,3 +22,7 @@ secret:
       match: "DJANGO_SECRET_KEY=ci-secret"
     - name: "docker-compose Neo4j auth: bash parameter expansion, not a secret"
       match: "neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in .env}"
+    - name: "CI .env placeholder Nominatim DB password"
+      match: "NOMINATIM_DB_PASSWORD=ci_nominatim_12"
+    - name: "docker-compose Nominatim password: bash parameter expansion, not a secret"
+      match: "${NOMINATIM_DB_PASSWORD:?Set NOMINATIM_DB_PASSWORD in .env}"

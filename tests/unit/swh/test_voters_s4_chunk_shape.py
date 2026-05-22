@@ -61,7 +61,7 @@ class TestS4ChunkShapeDrift(SimpleTestCase):
                 "siege_utilities.geo.spatial_transformations.PostGISConnector",
                 return_value=mock_connector,
             ), patch(
-                "swh.voters._coerce_and_build_geometry",
+                "swh.voters._legacy_raw._coerce_and_build_geometry",
                 side_effect=fake_coerce,
             ), patch(
                 "pandas.read_csv",
@@ -107,7 +107,7 @@ class TestS4ChunkShapeDrift(SimpleTestCase):
                 "siege_utilities.geo.spatial_transformations.PostGISConnector",
                 return_value=mock_connector,
             ), patch(
-                "swh.voters._coerce_and_build_geometry",
+                "swh.voters._legacy_raw._coerce_and_build_geometry",
                 side_effect=fake_coerce,
             ), patch(
                 "sqlalchemy.inspect"

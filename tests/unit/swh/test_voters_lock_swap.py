@@ -13,7 +13,7 @@ from pathlib import Path
 
 from django.test import SimpleTestCase
 
-import swh.voters as _voters_mod
+import swh.voters._legacy_raw as _voters_mod
 
 _SRC = Path(_voters_mod.__file__).read_text(encoding="utf-8")
 

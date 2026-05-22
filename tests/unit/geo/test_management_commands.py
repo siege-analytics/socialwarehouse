@@ -79,7 +79,7 @@ class TestSwhPostgisConnectorImports:
         (one fixed, one reverted) surfaces.
         """
         import inspect
-        import swh.voters as voters_module
+        import swh.voters._legacy_raw as voters_module
         src = inspect.getsource(voters_module)
         assert "from siege_utilities.geo.spatial_transformations import PostGISConnector" in src, (
             "swh/voters.py PostGISConnector import path regressed (B1 / #101)."

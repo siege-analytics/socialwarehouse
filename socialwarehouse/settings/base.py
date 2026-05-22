@@ -167,8 +167,14 @@ DEFAULT_PROJECTION_NUMBER = 4326
 PREFERRED_PROJECTION_FOR_US_DISTANCE_SEARCH = 5070
 
 # GST nominatim API constants (from GST api_settings/nominatim_geocoding.py).
-NOMINATIM_API_BASE_URL = "https://nominatim.openstreetmap.org/search?"
-NOMINATIM_USER_AGENT = "socialwarehouse"
+# SW#22 made these env-overridable so the geocoding profile can route
+# to the self-hosted Nominatim service (see docs/geocoding-self-host.md).
+# ``NOMINATIM_URL`` is the base URL (no trailing path); the ``/search?``
+# suffix is appended here for back-compat with the existing
+# ``NOMINATIM_API_BASE_URL`` consumers.
+NOMINATIM_URL = os.environ.get("NOMINATIM_URL", "https://nominatim.openstreetmap.org")
+NOMINATIM_API_BASE_URL = f"{NOMINATIM_URL.rstrip('/')}/search?"
+NOMINATIM_USER_AGENT = os.environ.get("NOMINATIM_USER_AGENT", "socialwarehouse")
 NOMINATIM_LATITUDE_VARIABLE = "lat"
 NOMINATIM_LONGITUDE_VARIABLE = "lon"
 

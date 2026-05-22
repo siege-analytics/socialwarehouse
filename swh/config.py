@@ -143,6 +143,23 @@ class SparkSettings(BaseSettings):
         )
 
 
+class NominatimSettings(BaseSettings):
+    """Nominatim client-side settings, populated from NOMINATIM_* env vars.
+
+    Defaults point at the public OSM Nominatim instance. Override to
+    self-host: ``NOMINATIM_URL=http://nominatim:8080`` (the in-cluster
+    service name from docker-compose.yml's ``geocoding`` profile) OR
+    a custom URL for any other deployment.
+
+    See docs/geocoding-self-host.md for the bootstrap procedure.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="NOMINATIM_", env_file=".env", extra="ignore")
+
+    url: str = "https://nominatim.openstreetmap.org"
+    user_agent: str = "socialwarehouse"
+
+
 class FECSettings(BaseSettings):
     """FEC campaign-finance analysis paths, populated from FEC_* env vars.
 
@@ -193,6 +210,7 @@ class SocialWarehouseSettings(BaseSettings):
     census: CensusSettings = Field(default_factory=CensusSettings)
     spark: SparkSettings = Field(default_factory=SparkSettings)
     fec: FECSettings = Field(default_factory=FECSettings)
+    nominatim: NominatimSettings = Field(default_factory=NominatimSettings)
 
 
 # Module-level singleton — import this in other modules.

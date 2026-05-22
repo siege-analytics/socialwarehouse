@@ -137,6 +137,43 @@ dev-env:  ## Print instructions for loading the SW dev shell environment
 	@echo ""
 
 # ---------------------------------------------------------------------------
+# Nominatim self-hosted geocoding (SW#22)
+# ---------------------------------------------------------------------------
+
+up-nominatim:  ## Start self-hosted Nominatim (first boot imports the PBF; ~15min for RI)
+	$(DKC) --profile geocoding up -d nominatim
+	@echo ""
+	@echo "  Nominatim is starting. First boot performs the OSM PBF import"
+	@echo "  (default: Rhode Island, ~10-15 min). Watch progress with:"
+	@echo "    make nominatim-logs"
+	@echo "    make nominatim-status     # 200 OK when import is done"
+
+down-nominatim:  ## Stop Nominatim (volumes preserved; next boot resumes)
+	$(DKC) stop nominatim
+
+clean-nominatim:  ## Stop Nominatim AND delete its volumes (forces full reimport on next boot)
+	$(DKC) stop nominatim
+	$(DKC) rm -fv nominatim
+	docker volume rm socialwarehouse_swh_nominatim_data socialwarehouse_swh_nominatim_flatnode 2>/dev/null || true
+	@echo "  Nominatim volumes deleted. Next 'make up-nominatim' will reimport from PBF."
+
+nominatim-status:  ## Curl Nominatim status endpoint (HTTP 200 when ready)
+	@curl -fsS "http://localhost:$${NOMINATIM_HOST_PORT:-8080}/status.php?format=json" && echo
+
+nominatim-logs:  ## Tail Nominatim container logs (import progress lives here)
+	$(DKC) logs -f --tail=100 nominatim
+
+nominatim-geocode-test:  ## Run a smoke-test geocode query. Usage: make nominatim-geocode-test ADDRESS="Providence, RI"
+	@curl -fsS "http://localhost:$${NOMINATIM_HOST_PORT:-8080}/search?q=$$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$${ADDRESS:-Providence, RI}")&format=json&limit=1" | python3 -m json.tool
+
+nominatim-bootstrap-demo:  ## End-to-end demo: bring up Nominatim (RI default), wait for ready, smoke-test
+	$(MAKE) up-nominatim
+	@echo "  Waiting for import to complete (this can take 10-15 minutes for RI; longer for larger states)..."
+	@until curl -fsS "http://localhost:$${NOMINATIM_HOST_PORT:-8080}/status.php?format=json" >/dev/null 2>&1; do sleep 30; printf "."; done; echo " ready."
+	@$(MAKE) nominatim-geocode-test ADDRESS="Providence, RI"
+	@echo "  Bootstrap demo complete. See docs/geocoding-self-host.md for next steps."
+
+# ---------------------------------------------------------------------------
 # Help
 # ---------------------------------------------------------------------------
 

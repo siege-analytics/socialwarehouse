@@ -75,7 +75,7 @@ Per SW#191 design Q2: special districts are broken out per kind (7 separate cach
 ## Reading the catalog
 
 - **By F11 helper**: any helper accepts any type in `_BOUNDARY_TYPES`. `addr.boundary_timeline("zcta")` works identically to `addr.boundary_timeline("state")`.
-- **By ingest**: TIGER fetch (`scripts/fetch_census_tiger.py`) populates the geographic-only types; ACS / QCEW / NCES / Special-Districts fetches populate domain-specific types per their sub-issues under SW#189 D / E / F.
+- **By ingest**: TIGER fetch (`scripts/fetch.py census-tiger`) populates the geographic-only types; ACS / QCEW / NCES / Special-Districts fetches populate domain-specific types per their sub-issues under SW#189 D / E / F. The unified `scripts/fetch.py` entrypoint (SW#35) dispatches to a registered Source per slug; see `scripts/sources/` for the registry.
 - **By vintage**: each type carries one vintage shape (census-decadal, redistricting-plan, nces-school-year). The polymorphic Vintage model (SW#190) discriminates kinds; each ABP row points at the appropriate vintage instance for its type.
 
 ## Cross-references

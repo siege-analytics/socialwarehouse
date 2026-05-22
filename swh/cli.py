@@ -316,7 +316,9 @@ def fec_centrality(graph_input_path, party):
 @click.option("--file", "csv_path", type=click.Path(exists=True), required=True, help="Path to the vendor's voter-file CSV")
 @click.option("--state", required=True, help="2-char USPS state code (e.g. TX); becomes the bronze partition key")
 @click.option("--skip-silver", is_flag=True, default=False, help="Run bronze ingest only; skip the silver.persons build (for staged loads)")
-def ingest_voter_file(vendor, csv_path, state, skip_silver):
+@click.option("--include-scores", is_flag=True, default=False, help="Also extract silver.person_scores from the bronze rows (B.2 of #250)")
+@click.option("--methodology", default="ts-2024", show_default=True, help="Methodology label for static TS scores (cycle-aligned scores embed their cycle year)")
+def ingest_voter_file(vendor, csv_path, state, skip_silver, include_scores, methodology):
     """Ingest a vendor voter file through the medallion pipeline.
 
     Currently supports TargetSmart format. Vendor CSV -> bronze.voter_file_<vendor>
@@ -332,7 +334,7 @@ def ingest_voter_file(vendor, csv_path, state, skip_silver):
     if vendor != "ts":
         raise click.UsageError(f"Vendor {vendor!r} is not yet supported; only 'ts' ships in #257.")
 
-    from swh.voters.ts import build_silver_persons, ingest_bronze
+    from swh.voters.ts import build_silver_persons, extract_scores, ingest_bronze
 
     click.echo(f"Bronze ingest: vendor={vendor} file={csv_path} state={state}")
     spark = settings.spark.build_session()
@@ -341,7 +343,10 @@ def ingest_voter_file(vendor, csv_path, state, skip_silver):
         click.echo(f"Bronze rows appended: {n_bronze}")
         if not skip_silver:
             n_silver = build_silver_persons(spark)
-            click.echo(f"Silver rows upserted: {n_silver}")
+            click.echo(f"Silver persons upserted: {n_silver}")
+            if include_scores:
+                n_scores = extract_scores(spark, default_methodology=methodology)
+                click.echo(f"Silver scores upserted: {n_scores}")
     finally:
         spark.stop()
 

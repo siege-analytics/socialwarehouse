@@ -64,11 +64,34 @@ For unknown vendor strings, the materializer logs a warning and drops the extras
 
 ## Address resolution
 
-DimPerson.address is a nullable FK to `sw_geo.address`. This materializer does NOT populate it; silver.persons.address_id is null after the TS importer (latitude/longitude are present but Address records are not linked).
+DimPerson.address is a nullable FK to `sw_geo.address`. The persons materializer does NOT populate it; silver.persons.address_id is null after the TS importer (lat/lon are present but Address records are not linked).
 
-Backfill is filed as sub-issue B.5 of #250 — a separate Spark spatial-join job from silver.persons.lat/lon → silver.addresses → DimPerson.address.
+The `backfill-addresses` subcommand handles the linkage:
 
-Until B.5 ships, the web app surfaces work on the boundary-cache GEOID columns directly on DimPerson (cd_geoid, sldu_geoid, etc.) without going through geo.Address.
+```bash
+swh materialize-electoral backfill-addresses [--tolerance 0.00001]
+```
+
+Reads silver.persons WHERE address_id IS NULL AND lat/lon are populated, looks up matching `sw_geo.Address` by lat/lon range (default tolerance ~1m at the equator), then updates BOTH silver.persons.address_id (via DeltaTable.merge) AND DimPerson.address (via Django ORM bulk_update).
+
+### Matching policy
+
+- Lat/lon range match using `latitude__gte / latitude__lte / longitude__gte / longitude__lte` (DecimalField comparison; doesn't require Address.geom to be populated).
+- If multiple Address rows match within tolerance (multi-unit buildings, Census-block centroid sharing): lowest-id wins deterministically, warning logged. "Right" answer for multi-unit is a follow-on if real-world data shows it.
+- If no Address matches within tolerance: row is skipped silently; DimPerson.address stays null. Web app handles nullable FK already.
+- Idempotent: silver-side filter on `address_id IS NULL` means already-linked rows aren't re-processed; running twice with no new Address rows in between is a no-op.
+
+### Tolerance tuning
+
+Default `--tolerance 0.00001` degrees ≈ ~1.11m at the equator. Tighten if vendor lat/lon precision is high and false-matches happen at multi-unit buildings. Loosen if vendor lat/lon precision is low and legitimate matches miss.
+
+### When to run
+
+After every Address ingest (so newly canonical addresses link to existing persons), and after every voter-file ingest (so newly canonical persons link to existing addresses). The subcommand is idempotent so over-running is safe.
+
+### Prerequisite
+
+`sw_geo.Address` must have rows with lat/lon. If the geo subsystem hasn't been seeded, the backfill is a no-op. Until then, the web app surfaces work on the boundary-cache GEOID columns directly on DimPerson (cd_geoid, sldu_geoid, etc.) without going through geo.Address.
 
 ## Troubleshooting
 

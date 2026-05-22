@@ -41,8 +41,11 @@ states wouldn't. So the bootstrap demo is small AND representative.
 
 ### 1. Set the required Nominatim DB password in `.env`
 
-The docker-compose entry refuses to start without it (per SW#32's
-lesson on default-credentials-in-git):
+`make up-nominatim` validates this is set before launching the
+container (per SW#32's lesson on default-credentials-in-git, the
+compose file uses a clearly-not-a-credential placeholder default
+that compose interpolates fine elsewhere, but the Makefile
+enforces a real value at up-time):
 
 ```bash
 echo "NOMINATIM_DB_PASSWORD=$(openssl rand -base64 24)" >> .env
@@ -175,12 +178,18 @@ the flag is the override.
 
 ## Troubleshooting
 
-### `make up-nominatim` says "NOMINATIM_DB_PASSWORD: variable is not set"
+### `make up-nominatim` says "NOMINATIM_DB_PASSWORD not set in .env"
 
 Add it to `.env`:
 ```bash
 echo "NOMINATIM_DB_PASSWORD=$(openssl rand -base64 24)" >> .env
 ```
+
+The Makefile target checks that `NOMINATIM_DB_PASSWORD` is set to
+something other than the compose-file placeholder before launching.
+The placeholder default exists so unrelated compose invocations
+(e.g. `docker compose build python-computation web` in CI) don't
+fail on the geocoding-only env requirement.
 
 ### Import has been running for an hour and not done
 

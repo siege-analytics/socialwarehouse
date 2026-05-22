@@ -1,0 +1,5 @@
+vb.voterbase_id,vb.tsmart_first_name,vb.tsmart_last_name,vb.vf_voter_status,vb.vf_source_state,vb.vf_g_2024,vb.vf_g_method_2024,vb.vf_g_2022,vb.vf_g_method_2022,vb.vf_g_2020,vb.vf_g_method_2020,vb.vf_g_2018,vb.vf_g_method_2018,vb.vf_p_2024,vb.vf_p_method_2024,vb.vf_p_2022,vb.vf_p_method_2022
+SV001,Ada,Voter,active,TX,Y,I,Y,M,Y,M,Y,I,Y,I,Y,M
+RV001,Reg,Voter,active,TX,Y,I,Y,M,N,,N,,Y,I,N,
+OV001,Occ,Voter,active,TX,Y,I,N,,N,,N,,N,,N,
+NV001,Non,Voter,active,TX,N,,N,,N,,N,,N,,N,

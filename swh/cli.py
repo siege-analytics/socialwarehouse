@@ -416,5 +416,18 @@ def materialize_electoral_all():
         spark.stop()
 
 
+@materialize_electoral.command("backfill-addresses")
+@click.option("--tolerance", type=float, default=0.00001, show_default=True, help="Degrees tolerance for lat/lon match (~1m at the equator)")
+def materialize_electoral_backfill_addresses(tolerance):
+    """Backfill silver.persons.address_id + DimPerson.address from lat/lon."""
+    from swh.voters.address_backfill import backfill_addresses
+    spark = settings.spark.build_session()
+    try:
+        counts = backfill_addresses(spark, tolerance=tolerance)
+        click.echo(f"Address backfill complete: {counts}")
+    finally:
+        spark.stop()
+
+
 if __name__ == "__main__":
     cli()

@@ -19,5 +19,12 @@ See `docs/electoral/targetsmart-importer.md` for the operator runbook.
 from swh.voters.ts.bronze import ingest_bronze
 from swh.voters.ts.scores import extract_scores
 from swh.voters.ts.silver import build_silver_persons
+from swh.voters.ts.vote_history import compute_aggregates, extract_vote_history
 
-__all__ = ["ingest_bronze", "build_silver_persons", "extract_scores"]
+__all__ = [
+    "ingest_bronze",
+    "build_silver_persons",
+    "extract_scores",
+    "extract_vote_history",
+    "compute_aggregates",
+]

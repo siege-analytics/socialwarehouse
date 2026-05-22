@@ -176,6 +176,9 @@ class TestFactVoteHistory:
         FactVoteHistory.objects.create(source_vendor="l2", **common)
 
 
+pyspark = pytest.importorskip("pyspark", reason="pyspark not installed in this env; Delta-schema tests run in CI docker-build job")
+
+
 class TestDeltaSchemas:
     """Schemas must be importable + registered. Pyspark import-only test;
     no Spark session required."""

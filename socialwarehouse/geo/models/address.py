@@ -473,7 +473,7 @@ class Address(models.Model):
             qs = qs.exclude(**{f"{field}__isnull": True}).exclude(**{field: ""})
         return qs.order_by("-context_date", "-assigned_at")
 
-    def boundaries_on(self, on_date):
+    def boundaries_on(self, on_date, boundary_types=None):
         """Boundaries this address was in on ``on_date``.
 
         For each boundary type, returns the ABP row whose ``context_date``
@@ -482,6 +482,13 @@ class Address(models.Model):
 
         Returns a dict ``{boundary_type: AddressBoundaryPeriod}``.
         Missing keys mean no ABP row covers ``on_date`` for that type.
+
+        If ``boundary_types`` is given (an iterable of type strings), the
+        DB query filters to rows where at least one of the requested types
+        has a non-empty geoid, AND the returned dict is restricted to the
+        requested types. This is the single-type-fast-path used by
+        ``boundary_on`` / ``geoid_on`` (SW#188): asking for one type pays
+        for one type's worth of rows, not all-types.
 
         NOTE: An earlier version of this helper resolved plan-bound rows
         by reading ``redistricting_plan.effective_from`` /
@@ -499,18 +506,48 @@ class Address(models.Model):
         if not vintage:
             return {}
 
-        periods = list(
+        # Validate + normalize the boundary_types filter.
+        if boundary_types is not None:
+            requested = tuple(boundary_types)
+            for btype in requested:
+                if btype not in self._BOUNDARY_TYPES:
+                    raise ValueError(
+                        f"Unknown boundary_type {btype!r}; "
+                        f"expected one of {self._BOUNDARY_TYPES}"
+                    )
+        else:
+            requested = self._BOUNDARY_TYPES
+
+        qs = (
             self.boundary_periods
             .filter(vintage=vintage)
             .filter(
                 models.Q(context_date__lte=on_date)
                 | models.Q(context_date__isnull=True)
             )
-            .order_by(models.F("context_date").desc(nulls_last=True))
         )
 
+        # SW#188: when caller asks for a subset of types, push the
+        # "at least one of the requested types has a non-empty geoid"
+        # filter into the queryset. Without this, single-type callers
+        # (boundary_on / geoid_on) still fetched every ABP row covering
+        # the vintage; with it, they fetch only rows that could resolve
+        # the requested types. Plan-bound rows have sparse geoid fills
+        # (CD-rows are null for SLDL/SLDU, etc.) so the OR-across-fields
+        # filter is the right narrowing shape.
+        if boundary_types is not None:
+            type_filter = models.Q()
+            for btype in requested:
+                field = f"{btype}_geoid"
+                type_filter |= ~models.Q(**{field: ""}) & models.Q(
+                    **{f"{field}__isnull": False}
+                )
+            qs = qs.filter(type_filter)
+
+        periods = list(qs.order_by(models.F("context_date").desc(nulls_last=True)))
+
         result = {}
-        for btype in self._BOUNDARY_TYPES:
+        for btype in requested:
             field = f"{btype}_geoid"
             chosen = next(
                 (p for p in periods if getattr(p, field, None)),
@@ -544,17 +581,23 @@ class Address(models.Model):
     def boundary_on(self, boundary_type, on_date):
         """The ABP row for one boundary type, as of ``on_date``.
 
-        Sugar for ``self.boundaries_on(on_date).get(boundary_type)``.
-        Returns the ABP row, or ``None`` if no row covers ``on_date``
-        for that type. Validates ``boundary_type`` against the known
-        set up-front so a typo doesn't silently return ``None``.
+        Returns the ABP row whose ``context_date`` is the most recent
+        on-or-before ``on_date`` and which carries a non-empty
+        ``{boundary_type}_geoid``. Returns ``None`` if no such row exists.
+
+        Validates ``boundary_type`` against the known set up-front so a
+        typo doesn't silently return ``None``.
+
+        SW#188: this calls ``boundaries_on(on_date, boundary_types=
+        [boundary_type])`` which pushes the type filter into the queryset
+        — single-type lookups don't pay for fetching all-types ABP rows.
         """
         if boundary_type not in self._BOUNDARY_TYPES:
             raise ValueError(
                 f"Unknown boundary_type {boundary_type!r}; "
                 f"expected one of {self._BOUNDARY_TYPES}"
             )
-        return self.boundaries_on(on_date).get(boundary_type)
+        return self.boundaries_on(on_date, boundary_types=[boundary_type]).get(boundary_type)
 
     def boundary_at(self, boundary_type, position):
         """The ABP row at ``position`` in reverse-chron history for ``boundary_type``.

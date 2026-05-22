@@ -406,7 +406,7 @@ class DimPerson(models.Model):
     voter_status_reason = models.CharField(max_length=128, blank=True, default="")
 
     address = models.ForeignKey(
-        "geo.Address",
+        "sw_geo.Address",
         on_delete=models.PROTECT,
         related_name="people",
         null=True,

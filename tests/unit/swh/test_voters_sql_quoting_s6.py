@@ -8,7 +8,7 @@ end-to-end behavior is exercised by the existing S3 test
 
 from django.test import SimpleTestCase
 
-from swh.voters import _validate_identifier
+from swh.voters._legacy_raw import _validate_identifier
 
 
 class TestValidateIdentifier(SimpleTestCase):

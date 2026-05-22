@@ -48,6 +48,45 @@ When two vendors report the same vote with different `voted_method`:
 - DimPerson aggregates count the vote once per `(election_date, election_type)` to avoid double-counting. The Spark job handles this; see the silver-build doc when it ships.
 - Consumer queries that want "give me this person's method" must pick a vendor; querying across both without picking is ambiguous.
 
+## TargetSmart importer mapping (SW#260)
+
+Defined in `swh/voters/ts/vote_history_mappings.py`. TS encodes vote participation as per-cycle columns; the importer parses each column name into `(election_type, year, is_method_column)`.
+
+### Column patterns
+
+| TS prefix | Election type | Default election date |
+|---|---|---|
+| `vb.vf_g_<year>` | general | `<year>-11-05` |
+| `vb.vf_p_<year>` | primary | `<year>-03-15` |
+| `vb.vf_g_method_<year>` | general (method) | (paired with `vb.vf_g_<year>`) |
+| `vb.vf_p_method_<year>` | primary (method) | (paired with `vb.vf_p_<year>`) |
+
+A row is emitted to `silver.vote_history` when the participation column is truthy (`Y`, `y`, `1`, `T`, `t`, `TRUE`, `True`). Method columns supply `voted_method`; if absent, `voted_method` defaults to `unknown`.
+
+### Method codes
+
+| TS code | Canonical `voted_method` |
+|---|---|
+| `I` | `in_person` |
+| `A` | `absentee` |
+| `M` | `mail` |
+| `E` | `early` |
+| `P` | `provisional` |
+| (empty / unknown) | `unknown` |
+
+### Vote-frequency buckets
+
+Computed in `compute_aggregates()` and materialized onto `silver.persons.vote_frequency_category`:
+
+| Bucket | Definition |
+|---|---|
+| `super_voter` | ≥4 generals voted |
+| `regular` | 2-3 generals voted |
+| `occasional` | exactly 1 general voted |
+| `non` | 0 generals voted (regardless of primary participation) |
+
+Operators with state-specific primary dates should extend `ELECTION_TYPE_PREFIXES` in `vote_history_mappings.py`; the defaults are documented approximations.
+
 ## Why we don't store more election metadata
 
 `FactElectionResult` (existing) holds vote tallies, candidates, offices, parties at the geography level. `FactVoteHistory` is the per-person counterpart: "did this person vote?", not "what did they vote for?" (voter privacy means the latter is not in the file at all).

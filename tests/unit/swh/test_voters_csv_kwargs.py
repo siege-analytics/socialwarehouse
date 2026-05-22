@@ -15,7 +15,7 @@ from unittest import mock
 
 from django.test import SimpleTestCase
 
-import swh.voters as voters_mod
+import swh.voters._legacy_raw as voters_mod
 
 _SRC = Path(voters_mod.__file__).read_text(encoding="utf-8")
 

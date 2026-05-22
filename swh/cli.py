@@ -311,5 +311,123 @@ def fec_centrality(graph_input_path, party):
     click.echo("FEC centrality reports written.")
 
 
+@cli.command("ingest-voter-file")
+@click.option("--vendor", type=click.Choice(["ts"]), required=True, help="Vendor format (currently only 'ts'; L2/Catalist/PDI follow in sub-issues C-E of #250)")
+@click.option("--file", "csv_path", type=click.Path(exists=True), required=True, help="Path to the vendor's voter-file CSV")
+@click.option("--state", required=True, help="2-char USPS state code (e.g. TX); becomes the bronze partition key")
+@click.option("--skip-silver", is_flag=True, default=False, help="Run bronze ingest only; skip the silver.persons build (for staged loads)")
+@click.option("--include-scores", is_flag=True, default=False, help="Also extract silver.person_scores from the bronze rows (B.2 of #250)")
+@click.option("--include-vote-history", is_flag=True, default=False, help="Also extract silver.vote_history + compute Person aggregates (B.3 of #250)")
+@click.option("--methodology", default="ts-2024", show_default=True, help="Methodology label for static TS scores (cycle-aligned scores embed their cycle year)")
+def ingest_voter_file(vendor, csv_path, state, skip_silver, include_scores, include_vote_history, methodology):
+    """Ingest a vendor voter file through the medallion pipeline.
+
+    Currently supports TargetSmart format. Vendor CSV -> bronze.voter_file_<vendor>
+    (raw row as JSON) -> silver.persons (canonical, vendor-neutral).
+
+    Score extraction and vote-history extraction land in sub-issues B.2 / B.3
+    of #250; PostGIS materialization lands in B.4. This command is the
+    thin spine that puts canonical rows in silver.persons for #257.
+
+    Example:
+        swh ingest-voter-file --vendor ts --file /data/inputs/TX_voters.csv --state TX
+    """
+    if vendor != "ts":
+        raise click.UsageError(f"Vendor {vendor!r} is not yet supported; only 'ts' ships in #257.")
+
+    from swh.voters.ts import (
+        build_silver_persons,
+        compute_aggregates,
+        extract_scores,
+        extract_vote_history,
+        ingest_bronze,
+    )
+
+    click.echo(f"Bronze ingest: vendor={vendor} file={csv_path} state={state}")
+    spark = settings.spark.build_session()
+    try:
+        n_bronze = ingest_bronze(spark, csv_path=csv_path, state=state)
+        click.echo(f"Bronze rows appended: {n_bronze}")
+        if not skip_silver:
+            n_silver = build_silver_persons(spark)
+            click.echo(f"Silver persons upserted: {n_silver}")
+            if include_scores:
+                n_scores = extract_scores(spark, default_methodology=methodology)
+                click.echo(f"Silver scores upserted: {n_scores}")
+            if include_vote_history:
+                n_history = extract_vote_history(spark)
+                click.echo(f"Silver vote-history rows upserted: {n_history}")
+                n_agg = compute_aggregates(spark)
+                click.echo(f"Person aggregates updated: {n_agg}")
+    finally:
+        spark.stop()
+
+
+@cli.group("materialize-electoral")
+def materialize_electoral():
+    """Materialize silver electoral Delta tables into PostGIS star schema (B.4 of #250)."""
+
+
+@materialize_electoral.command("persons")
+def materialize_electoral_persons():
+    """Materialize silver.persons -> DimPerson."""
+    from swh.voters.materialize import materialize_persons
+    spark = settings.spark.build_session()
+    try:
+        n = materialize_persons(spark)
+        click.echo(f"DimPerson rows upserted: {n}")
+    finally:
+        spark.stop()
+
+
+@materialize_electoral.command("scores")
+def materialize_electoral_scores():
+    """Materialize silver.person_scores -> FactPersonScore."""
+    from swh.voters.materialize import materialize_scores
+    spark = settings.spark.build_session()
+    try:
+        n = materialize_scores(spark)
+        click.echo(f"FactPersonScore rows upserted: {n}")
+    finally:
+        spark.stop()
+
+
+@materialize_electoral.command("vote-history")
+def materialize_electoral_vote_history():
+    """Materialize silver.vote_history -> FactVoteHistory."""
+    from swh.voters.materialize import materialize_vote_history
+    spark = settings.spark.build_session()
+    try:
+        n = materialize_vote_history(spark)
+        click.echo(f"FactVoteHistory rows upserted: {n}")
+    finally:
+        spark.stop()
+
+
+@materialize_electoral.command("all")
+def materialize_electoral_all():
+    """Materialize all three electoral tables in dependency order."""
+    from swh.voters.materialize import materialize_all
+    spark = settings.spark.build_session()
+    try:
+        counts = materialize_all(spark)
+        click.echo(f"Materialization complete: {counts}")
+    finally:
+        spark.stop()
+
+
+@materialize_electoral.command("backfill-addresses")
+@click.option("--tolerance", type=float, default=0.00001, show_default=True, help="Degrees tolerance for lat/lon match (~1m at the equator)")
+def materialize_electoral_backfill_addresses(tolerance):
+    """Backfill silver.persons.address_id + DimPerson.address from lat/lon."""
+    from swh.voters.address_backfill import backfill_addresses
+    spark = settings.spark.build_session()
+    try:
+        counts = backfill_addresses(spark, tolerance=tolerance)
+        click.echo(f"Address backfill complete: {counts}")
+    finally:
+        spark.stop()
+
+
 if __name__ == "__main__":
     cli()

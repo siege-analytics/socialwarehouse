@@ -1,0 +1,78 @@
+name: PR Base Guard
+
+# SW#234: enforce "develop-role is the origin of work; main-role is downstream."
+#
+# Branch ROLES, not names. Many repos use synonyms:
+#   - main-role  ("best work, ready to use"):
+#     main, master, prod, production, trunk, stable, release
+#   - develop-role ("origin of experiments competing for main"):
+#     develop, dev, next, integration, staging, develop-next
+#
+# Fails PRs targeting a main-role branch unless:
+#   - The head branch is a develop-role branch (canonical promote), OR
+#   - The head matches `promote/*` / `release/*` / `hotfix/*`, OR
+#   - The PR carries a `hotfix-direct-to-main` label (explicit maintainer
+#     bypass, audit trail visible in the PR's label history).
+#
+# Catches the silent failure mode where `gh pr create` defaults to the
+# repo's default branch (often the main-role one) and a feature PR
+# lands there without going through develop-role first.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+    branches:
+      # main-role synonyms. Add a new entry here if your repo uses a
+      # name not yet listed (and consider whether the develop-role
+      # synonym list below also needs updating).
+      - main
+      - master
+      - prod
+      - production
+      - trunk
+      - stable
+      - release
+
+jobs:
+  enforce-base:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify PR base is allowed for a main-role branch
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          LABELS_JSON: ${{ toJSON(github.event.pull_request.labels) }}
+        run: |
+          set -eu
+
+          # develop-role synonyms — the role concept lives here too.
+          # Keep this list in sync with feedback_develop_is_origin_of_work.md.
+          case "$HEAD_REF" in
+            develop|dev|next|integration|staging|develop-next)
+              echo "OK: head '$HEAD_REF' is a develop-role branch (canonical promote)."
+              exit 0
+              ;;
+          esac
+
+          # promote/release/hotfix branch-name conventions.
+          case "$HEAD_REF" in
+            promote/*|release/*|hotfix/*)
+              echo "OK: head '$HEAD_REF' matches promote/release/hotfix convention."
+              exit 0
+              ;;
+          esac
+
+          # Explicit bypass label (audit trail in the PR's label history).
+          if echo "$LABELS_JSON" | grep -q '"name": "hotfix-direct-to-main"'; then
+            echo "OK: 'hotfix-direct-to-main' label present (maintainer bypass)."
+            exit 0
+          fi
+
+          # Otherwise fail with remediation guidance.
+          echo "::error::PR base '$BASE_REF' is a main-role branch but head '$HEAD_REF'"
+          echo "::error::is not develop-role / promote / release / hotfix and the PR is"
+          echo "::error::not labeled 'hotfix-direct-to-main'. Per SW#234, feature/fix PRs"
+          echo "::error::must target a develop-role branch (develop, dev, next, integration,"
+          echo "::error::staging, develop-next). Re-target the PR base, or apply the"
+          echo "::error::'hotfix-direct-to-main' label if this is a deliberate hotfix."
+          exit 1

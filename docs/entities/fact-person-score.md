@@ -51,6 +51,27 @@ Importers writing new score types should:
 
 The `unique_together = (person, score_type, source_vendor, methodology_version)` constraint means re-running an importer with the same methodology version is idempotent. Bumping the methodology version creates a parallel row; both are queryable.
 
+## TargetSmart importer mapping (SW#259)
+
+Defined in `swh/voters/ts/score_mappings.py`. Static (non-cycle) TS scores take the operator-supplied `--methodology` flag (default `ts-2024`). Cycle-aligned TS scores embed the year from the column name as `ts-<year>`.
+
+| TS column | Canonical `score_type` | Methodology |
+|---|---|---|
+| `vb.tsmart_partisan_score` | `partisan_score` | `ts-<vintage>` |
+| `vb.tsmart_ideology_score` | `ideology_score` | `ts-<vintage>` |
+| `vb.tsmart_engagement_score` | `engagement_score` | `ts-<vintage>` |
+| `vb.tsmart_persuadability_score` | `persuadability_score` | `ts-<vintage>` |
+| `vb.tsmart_climate_score` | `issue_climate` | `ts-<vintage>` |
+| `vb.tsmart_abortion_score` | `issue_abortion` | `ts-<vintage>` |
+| `vb.tsmart_gun_safety_score` | `issue_gun_safety` | `ts-<vintage>` |
+| `vb.tsmart_healthcare_score` | `issue_healthcare` | `ts-<vintage>` |
+| `vb.tsmart_economy_score` | `issue_economy` | `ts-<vintage>` |
+| `vb.tsmart_immigration_score` | `issue_immigration` | `ts-<vintage>` |
+| `vb.tsmart_turnout_score_general_<year>` | `turnout_propensity_general` | `ts-<year>` |
+| `vb.tsmart_turnout_score_primary_<year>` | `turnout_propensity_primary` | `ts-<year>` |
+
+Unmapped score-shaped columns (`*_score`) stay in `vendor_extras` until they earn promotion per [`docs/warehouse-schema-evolution.md`](../warehouse-schema-evolution.md). To promote: add the mapping to `score_mappings.py`, add the row above, document in the next PR.
+
 ## Schema evolution
 
 `score_type` and `methodology_version` evolve freely (new strings, no migrations). The columns themselves are stable; if a fundamentally new score shape appears (e.g. multi-dimensional scores), file a follow-on sub-issue.

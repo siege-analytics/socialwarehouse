@@ -13,12 +13,34 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from .dimensions import (
+    VENDOR_CHOICES,
     DimCensusVariable,
     DimGeography,
+    DimPerson,
     DimRedistrictingCycle,
     DimSurvey,
     DimTime,
 )
+
+
+ELECTION_TYPE_CHOICES = [
+    ("general", "General"),
+    ("primary", "Primary"),
+    ("runoff", "Runoff"),
+    ("special", "Special"),
+    ("local", "Local"),
+    ("other", "Other"),
+]
+
+
+VOTED_METHOD_CHOICES = [
+    ("in_person", "In person"),
+    ("absentee", "Absentee"),
+    ("mail", "Mail"),
+    ("early", "Early"),
+    ("provisional", "Provisional"),
+    ("unknown", "Unknown"),
+]
 
 
 # Census Bureau coefficient-of-variation reliability thresholds. Drawn
@@ -263,3 +285,72 @@ class FactRedistrictingPlan(models.Model):
 
     def __str__(self):
         return f"{self.chamber} District {self.district_number} ({self.cycle.cycle_year})"
+
+
+class FactPersonScore(models.Model):
+    """Per-person score event (partisan, turnout propensity, issue stance, etc.).
+
+    Tall format: one row per (person, score_type, source_vendor,
+    methodology_version). Vendor scoring systems are NOT interchangeable
+    even when score_type matches — each score carries its source_vendor
+    and methodology_version. Consumers querying "give me a partisan
+    score" must pick a source explicitly.
+
+    `score_type` is a free string (not a choices enum). Vendor scoring
+    vocabularies grow over time; a migration-per-cycle is not viable.
+    Common types: 'partisan_score', 'turnout_propensity_general',
+    'turnout_propensity_primary', 'issue_<topic>'. See
+    docs/entities/fact-person-score.md for the registered vocabulary.
+    """
+
+    person = models.ForeignKey(DimPerson, on_delete=models.CASCADE, related_name="scores")
+    score_type = models.CharField(max_length=128, db_index=True)
+    value = models.FloatField()
+    source_vendor = models.CharField(max_length=16, choices=VENDOR_CHOICES)
+    methodology_version = models.CharField(max_length=64, blank=True, default="")
+    scored_at = models.DateTimeField()
+    loaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "sw_fact_person_score"
+        verbose_name = "Person Score Fact"
+        verbose_name_plural = "Person Score Facts"
+        unique_together = [("person", "score_type", "source_vendor", "methodology_version")]
+        indexes = [
+            models.Index(fields=["score_type", "source_vendor"]),
+            models.Index(fields=["person", "score_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.score_type}={self.value} ({self.source_vendor}) for {self.person_id}"
+
+
+class FactVoteHistory(models.Model):
+    """Per-person per-election vote event.
+
+    `unique_together` on (person, election_date, election_type,
+    source_vendor) preserves both vendors' reports of the same vote
+    while preventing duplicate-load. Cross-vendor reconciliation
+    (when two vendors disagree on voted_method) is a consumer
+    decision; both rows are kept.
+    """
+
+    person = models.ForeignKey(DimPerson, on_delete=models.CASCADE, related_name="vote_history")
+    election_date = models.DateField(db_index=True)
+    election_type = models.CharField(max_length=16, choices=ELECTION_TYPE_CHOICES)
+    voted_method = models.CharField(max_length=16, choices=VOTED_METHOD_CHOICES, default="unknown")
+    source_vendor = models.CharField(max_length=16, choices=VENDOR_CHOICES)
+    loaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "sw_fact_vote_history"
+        verbose_name = "Vote History Fact"
+        verbose_name_plural = "Vote History Facts"
+        unique_together = [("person", "election_date", "election_type", "source_vendor")]
+        indexes = [
+            models.Index(fields=["person", "election_date"]),
+            models.Index(fields=["election_date", "election_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.election_type} {self.election_date} ({self.source_vendor}) for {self.person_id}"

@@ -342,3 +342,131 @@ class DimRedistrictingCycle(models.Model):
 
     def __str__(self):
         return f"Redistricting Cycle {self.cycle_year}"
+
+
+VENDOR_CHOICES = [
+    ("pdi", "PDI"),
+    ("l2", "L2"),
+    ("catalist", "Catalist"),
+    ("ts", "TargetSmart"),
+]
+
+
+REGISTRATION_STATUS_CHOICES = [
+    ("active", "Active"),
+    ("inactive", "Inactive"),
+    ("purged", "Purged"),
+    ("pending", "Pending"),
+    ("not_registered", "Not registered"),
+    ("deceased", "Deceased"),
+]
+
+
+class DimPerson(models.Model):
+    """Person dimension — canonical voter record.
+
+    Natural key: (vendor, vendor_voter_id). Same physical voter loaded
+    from two vendors yields two DimPerson rows; cross-vendor
+    probabilistic matching is a follow-on (#250 sub-issue), and the
+    schema permits it via a `canonical_person_id` column addition
+    later.
+
+    Current-only (not SCD Type 2). Vendor voter files are themselves
+    point-in-time snapshots; the effective-dated semantics SCD2
+    captures do not apply cleanly. Historical truth lives in the
+    Delta silver.persons table (append/upsert; full history preserved
+    there). Promote to SCD2 if a concrete consumer asks.
+
+    Vendor-divergent fields live in `*_extras` JSONFields. Promote a
+    map key to a canonical column when a stable pattern emerges; see
+    `docs/warehouse-schema-evolution.md`.
+    """
+
+    vendor = models.CharField(max_length=16, choices=VENDOR_CHOICES, db_index=True)
+    vendor_voter_id = models.CharField(max_length=128, db_index=True)
+
+    first_name = models.CharField(max_length=128, blank=True, default="")
+    middle_name = models.CharField(max_length=128, blank=True, default="")
+    last_name = models.CharField(max_length=128, blank=True, default="")
+    name_suffix = models.CharField(max_length=32, blank=True, default="")
+    dob = models.DateField(null=True, blank=True)
+    gender = models.CharField(max_length=32, blank=True, default="")
+    ethnicity = models.CharField(max_length=64, blank=True, default="")
+    language = models.CharField(max_length=64, blank=True, default="")
+
+    registration_status = models.CharField(
+        max_length=32,
+        choices=REGISTRATION_STATUS_CHOICES,
+        default="not_registered",
+        db_index=True,
+    )
+    registration_state = models.CharField(max_length=2, db_index=True)
+    registration_date = models.DateField(null=True, blank=True)
+    party_registration = models.CharField(max_length=64, blank=True, default="")
+    voter_status_reason = models.CharField(max_length=128, blank=True, default="")
+
+    address = models.ForeignKey(
+        "sw_geo.Address",
+        on_delete=models.PROTECT,
+        related_name="people",
+        null=True,
+        blank=True,
+        help_text="Canonical address (resolved via geo pipeline). Importers that cannot resolve an address may set null; consumer policy decides.",
+    )
+    # Vendor-supplied raw address preserved for audit / diff trail
+    # against what canonical resolution produced.
+    vendor_address_line1 = models.CharField(max_length=255, blank=True, default="")
+    vendor_address_line2 = models.CharField(max_length=255, blank=True, default="")
+    vendor_city = models.CharField(max_length=128, blank=True, default="")
+    vendor_state = models.CharField(max_length=2, blank=True, default="")
+    vendor_zip = models.CharField(max_length=5, blank=True, default="")
+    vendor_zip4 = models.CharField(max_length=4, blank=True, default="")
+    vendor_address_supplied_at = models.DateField(null=True, blank=True)
+
+    household_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    household_size = models.PositiveSmallIntegerField(null=True, blank=True)
+    is_head_of_household = models.BooleanField(default=False)
+
+    # Vote-history aggregates materialized from FactVoteHistory.
+    # Updated by a Spark-side recompute on the silver build (not by
+    # Django signal); see docs/entities/dim-person.md for cadence.
+    general_election_count = models.PositiveIntegerField(default=0)
+    primary_election_count = models.PositiveIntegerField(default=0)
+    total_vote_count = models.PositiveIntegerField(default=0)
+    last_voted_at = models.DateField(null=True, blank=True)
+    vote_frequency_category = models.CharField(max_length=32, blank=True, default="")
+
+    pdi_extras = models.JSONField(default=dict, blank=True)
+    l2_extras = models.JSONField(default=dict, blank=True)
+    catalist_extras = models.JSONField(default=dict, blank=True)
+    ts_extras = models.JSONField(default=dict, blank=True)
+
+    last_loaded_from_vendor = models.CharField(
+        max_length=16,
+        choices=VENDOR_CHOICES,
+        blank=True,
+        default="",
+    )
+    last_loaded_at = models.DateTimeField(null=True, blank=True)
+    silver_source_path = models.CharField(max_length=512, blank=True, default="")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Person Dimension"
+        verbose_name_plural = "Person Dimensions"
+        unique_together = [("vendor", "vendor_voter_id")]
+        indexes = [
+            models.Index(fields=["registration_state", "registration_status"]),
+            models.Index(fields=["last_name", "first_name"]),
+            models.Index(fields=["dob"]),
+        ]
+
+    @property
+    def is_registered_voter(self):
+        return self.registration_status in {"active", "inactive", "pending"}
+
+    def __str__(self):
+        name = " ".join(part for part in (self.first_name, self.last_name) if part)
+        return f"{name or '(no name)'} [{self.vendor}:{self.vendor_voter_id}]"

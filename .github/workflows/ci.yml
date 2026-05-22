@@ -110,7 +110,7 @@ jobs:
       - name: Set up environment
         run: |
           cp .env.example .env
-          printf '\nPOSTGRES_PASSWORD=ci_build\nNEO4J_PASSWORD=ci_neo4j_12\nDJANGO_SECRET_KEY=ci-secret\n' >> .env
+          printf '\nPOSTGRES_PASSWORD=ci_build\nNEO4J_PASSWORD=ci_neo4j_12\nDJANGO_SECRET_KEY=ci-secret\nNOMINATIM_DB_PASSWORD=ci_nominatim_12\n' >> .env
 
       - name: Build python-computation and web images
         run: docker compose build python-computation web

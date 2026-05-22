@@ -1,17 +1,24 @@
 from .dimensions import (
+    REGISTRATION_STATUS_CHOICES,
+    VENDOR_CHOICES,
     DimCensusVariable,
     DimGeography,
+    DimPerson,
     DimRedistrictingCycle,
     DimSurvey,
     DimTime,
 )
 from .facts import (
+    ELECTION_TYPE_CHOICES,
+    VOTED_METHOD_CHOICES,
     FactACSEstimate,
     FactDecennialCount,
     FactElectionResult,
+    FactPersonScore,
     FactPrecinctResult,
     FactRedistrictingPlan,
     FactUrbanicity,
+    FactVoteHistory,
 )
 
 __all__ = [
@@ -20,10 +27,17 @@ __all__ = [
     "DimCensusVariable",
     "DimTime",
     "DimRedistrictingCycle",
+    "DimPerson",
     "FactACSEstimate",
     "FactDecennialCount",
     "FactUrbanicity",
     "FactElectionResult",
     "FactPrecinctResult",
     "FactRedistrictingPlan",
+    "FactPersonScore",
+    "FactVoteHistory",
+    "VENDOR_CHOICES",
+    "REGISTRATION_STATUS_CHOICES",
+    "ELECTION_TYPE_CHOICES",
+    "VOTED_METHOD_CHOICES",
 ]

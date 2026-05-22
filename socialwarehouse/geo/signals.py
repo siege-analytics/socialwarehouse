@@ -208,16 +208,42 @@ def _connect():
 
         addr = instance.address
         dirty_fields = []
-        for btype in Address._BOUNDARY_TYPES:
-            new_value = getattr(instance, f"{btype}_geoid", "") or ""
-            if not new_value:
-                # ABP row doesn't carry this boundary type's geoid;
-                # don't clobber existing cache from another ABP row.
-                continue
-            cache_field = f"{btype}_geoid"
-            if getattr(addr, cache_field) != new_value:
-                setattr(addr, cache_field, new_value)
-                dirty_fields.append(cache_field)
+
+        # SW#228: identify which boundary types the saved ABP touches;
+        # we only need to re-resolve the cache for those types.
+        types_touched = [
+            btype for btype in Address._BOUNDARY_TYPES
+            if (getattr(instance, f"{btype}_geoid", "") or "")
+        ]
+
+        # SW#228 fix (option b): instead of trusting `instance.{btype}_geoid`
+        # directly (which loses the cache-vs-helper invariant when ABP rows
+        # are INSERTed out of context_date order), re-resolve the
+        # authoritative current value per type via `boundaries_on(today,
+        # boundary_types=types_touched)`. The cache then matches what
+        # `current_boundaries()` / `current_geoid()` would return for the
+        # same address at the same moment, regardless of INSERT order.
+        #
+        # The single grouped call (vs N per-type calls) leverages the
+        # SW#188 type-filter pushdown on boundaries_on — one DB query
+        # rather than N — so the correctness fix here doesn't come with
+        # an N-times-DB cost.
+        if types_touched:
+            from django.utils import timezone
+            today = timezone.localdate()
+            authoritative = addr.boundaries_on(today, boundary_types=types_touched)
+            for btype in types_touched:
+                authoritative_row = authoritative.get(btype)
+                if authoritative_row is None:
+                    # No current ABP for this type — saved instance must
+                    # be a backfill / historical write that doesn't shift
+                    # "current" semantics. Don't clobber cache.
+                    continue
+                new_value = getattr(authoritative_row, f"{btype}_geoid", "") or ""
+                cache_field = f"{btype}_geoid"
+                if getattr(addr, cache_field) != new_value:
+                    setattr(addr, cache_field, new_value)
+                    dirty_fields.append(cache_field)
 
         # SW#100: also maintain census_year from census-decadal vintages.
         new_year = _census_year_from_vintage(instance.vintage)

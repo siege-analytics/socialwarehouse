@@ -1,6 +1,6 @@
 # Template-readiness C / SW#191 — Boundary catalog expansion (design)
 
-**Status:** Design v1. Awaiting maintainer answers on the four open questions.
+**Status:** Implementation complete (2026-05-21). All 13 boundary types added to `Address._BOUNDARY_TYPES` and `AddressBoundaryPeriod`; migrations + F11-helper tests landed. Per-type entity docs consolidated into `docs/entities/boundary_catalog.md` rather than one-doc-per-type (consistent with the existing pattern where `state`, `county`, `tract` etc. share `docs/entities/address.md` rather than per-type docs). All four open questions below were resolved during implementation: Q1=(c) all types in one batch, Q2=(b) per-kind special districts (7 sub-fields), Q3=(a) `zcta_geoid` separate from `zip5`, Q4=(a) census-decadal vintage uniformly for v1.
 
 **Parent:** SW#189 (template-readiness initiative).
 **Blocked by:** B (#190) — done after PR #206.

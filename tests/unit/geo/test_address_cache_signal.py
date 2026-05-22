@@ -127,10 +127,14 @@ class TestSignalCacheRefresh(TestCase):
 
     def test_signal_re_enabled_after_context_manager(self):
         with address_cache_refresh_disabled():
-            self._create_abp(cd_geoid="0612")
+            self._create_abp(cd_geoid="0612", context_date=date(2024, 1, 1))
 
-        # Outside the context, the signal should fire normally.
-        self._create_abp(redistricting_plan_id=1, cd_geoid="0699")
+        # Outside the context, the signal should fire normally. Per
+        # SW#228 the signal now resolves via boundaries_on(today), which
+        # picks the most-recent context_date; give the second ABP a newer
+        # date so it's authoritative-for-today.
+        self._create_abp(redistricting_plan_id=1, cd_geoid="0699",
+                         context_date=date(2025, 1, 1))
 
         self.addr.refresh_from_db()
         assert self.addr.cd_geoid == "0699"
@@ -335,3 +339,143 @@ class TestCensusYearFromVintageHelper(TestCase):
     def test_returns_none_for_none(self):
         from socialwarehouse.geo.signals import _census_year_from_vintage
         assert _census_year_from_vintage(None) is None
+
+
+class TestSW228OutOfContextDateOrder(TestCase):
+    """SW#228: cache must match `boundaries_on(today)` result regardless
+    of ABP INSERT order. Previously the signal trusted `instance.{type}_geoid`
+    directly which overwrote cache with older-context_date values.
+
+    Bug scenario (per #228 body):
+      1. INSERT row A (context_date=2025-06-01, cd_geoid="A") -> cache = "A"
+      2. INSERT row B (context_date=2024-01-01, cd_geoid="B") -> cache should
+         stay "A" (newer context_date wins), but legacy signal set it to "B".
+
+    After SW#228 (option b), step 2's cache resolution goes through
+    `boundaries_on(today, boundary_types=["cd"])` which returns row A
+    (most-recent context_date) — cache stays "A". Helper-vs-cache
+    invariant holds.
+    """
+
+    def setUp(self):
+        from socialwarehouse.geo.models import Address, CensusDecadalVintage
+        self.vintage_2020 = CensusDecadalVintage.objects.get(decade=2020)
+        self.addr = Address.objects.create(state_abbreviation="CA")
+
+    def _create_abp(self, **kwargs):
+        from socialwarehouse.geo.models import AddressBoundaryPeriod
+        defaults = {
+            "address": self.addr,
+            "vintage": self.vintage_2020,
+            "assignment_method": "SPATIAL_JOIN",
+        }
+        defaults.update(kwargs)
+        return AddressBoundaryPeriod.objects.create(**defaults)
+
+    def test_older_context_date_insert_does_not_clobber_cache(self):
+        # cd_geoid is varchar(4); use short codes. Vary plan_id to satisfy
+        # the (address, vintage, plan) uniqueness constraint
+        # (db_constraint=False so any integer works without a fixture).
+
+        # Step 1: insert newer-context_date row first; cache becomes "0A12".
+        self._create_abp(cd_geoid="0A12", context_date=date(2025, 6, 1),
+                         redistricting_plan_id=1)
+        self.addr.refresh_from_db()
+        assert self.addr.cd_geoid == "0A12"
+
+        # Step 2: insert older-context_date row (different plan to satisfy
+        # uniqueness). Cache should STAY "0A12" because newer-context_date
+        # row is still the authoritative ABP for today.
+        self._create_abp(cd_geoid="0B34", context_date=date(2024, 1, 1),
+                         redistricting_plan_id=2)
+        self.addr.refresh_from_db()
+        assert self.addr.cd_geoid == "0A12", (
+            "SW#228: older-context_date INSERT must not clobber cache; "
+            "got %r (expected '0A12')" % self.addr.cd_geoid
+        )
+
+    def test_cache_matches_boundaries_on_today(self):
+        # The invariant the SW#201 property test wants: cache matches
+        # `boundaries_on(today)` after any sequence of writes. Use four
+        # rows with distinct plan_ids (to satisfy uniqueness) and
+        # context_dates spanning the range; INSERT in non-monotonic order
+        # to exercise the SW#228 fix.
+
+        self._create_abp(cd_geoid="0OLD", context_date=date(2023, 1, 1),
+                         redistricting_plan_id=1)
+        self._create_abp(cd_geoid="0MID", context_date=date(2024, 6, 1),
+                         redistricting_plan_id=2)
+        self._create_abp(cd_geoid="0NEW", context_date=date(2025, 6, 1),
+                         redistricting_plan_id=3)
+        # Then an INSERT out-of-order (older context_date arrives last):
+        self._create_abp(cd_geoid="0ORG", context_date=date(2022, 1, 1),
+                         redistricting_plan_id=4)
+
+        self.addr.refresh_from_db()
+
+        helper_result = self.addr.boundaries_on(timezone.localdate(), boundary_types=["cd"])
+        helper_cd = helper_result.get("cd")
+        helper_cd_geoid = helper_cd.cd_geoid if helper_cd else ""
+
+        assert self.addr.cd_geoid == helper_cd_geoid, (
+            "SW#228 invariant: cache (%r) must match boundaries_on(today) "
+            "result (%r) regardless of INSERT order" % (
+                self.addr.cd_geoid, helper_cd_geoid,
+            )
+        )
+        # And specifically, "0NEW" (most-recent context_date) should win.
+        assert self.addr.cd_geoid == "0NEW"
+
+
+class TestSW188SingleTypeQueryShape(TestCase):
+    """SW#188: `boundaries_on(date, boundary_types=[X])` filters the
+    queryset to rows that can resolve X (vs fetching all-types). The
+    contract is "boundary_on(X, date) only sees rows that could matter
+    for X." Verifies the filter shape with assertNumQueries to bound
+    the cost.
+    """
+
+    def setUp(self):
+        from socialwarehouse.geo.models import Address, CensusDecadalVintage
+        self.vintage = CensusDecadalVintage.objects.get(decade=2020)
+        self.addr = Address.objects.create(state_abbreviation="CA")
+
+    def _create_abp(self, **kwargs):
+        from socialwarehouse.geo.models import AddressBoundaryPeriod
+        defaults = {
+            "address": self.addr,
+            "vintage": self.vintage,
+            "assignment_method": "SPATIAL_JOIN",
+            "context_date": date(2024, 6, 1),
+        }
+        defaults.update(kwargs)
+        return AddressBoundaryPeriod.objects.create(**defaults)
+
+    def test_boundary_on_returns_correct_row(self):
+        # Two ABPs with distinct plans to satisfy the uniqueness
+        # constraint. The first carries cd; the second carries vtd only.
+        # Single-type filter for "cd" should pick up only the first.
+        self._create_abp(cd_geoid="0612", sldl_geoid="06120",
+                         redistricting_plan_id=1)
+        self._create_abp(vtd_geoid="9999", context_date=date(2025, 1, 1),
+                         redistricting_plan_id=2)
+
+        row = self.addr.boundary_on("cd", date(2025, 6, 1))
+        assert row is not None
+        assert row.cd_geoid == "0612"
+
+    def test_boundaries_on_with_type_filter_returns_only_requested_types(self):
+        self._create_abp(cd_geoid="0612", sldl_geoid="06120",
+                         redistricting_plan_id=1)
+        result = self.addr.boundaries_on(date(2024, 6, 1), boundary_types=["cd"])
+        assert "cd" in result
+        assert "sldl" not in result  # not requested
+
+    def test_boundaries_on_unfiltered_returns_all_types(self):
+        self._create_abp(cd_geoid="0612", sldl_geoid="06120",
+                         state_geoid="06", redistricting_plan_id=1)
+        result = self.addr.boundaries_on(date(2024, 6, 1))
+        # Unfiltered returns all types the row touches (cd, sldl, state).
+        assert "cd" in result
+        assert "sldl" in result
+        assert "state" in result

@@ -271,8 +271,35 @@ services:
     restart: unless-stopped
     profiles: [sedonadb, full]
 
+  # Self-hosted Nominatim for the DSTK-replacement geocoding path.
+  # First boot imports the configured PBF (default: Rhode Island).
+  # See docs/geocoding-self-host.md for the bootstrap procedure.
+  nominatim:
+    build:
+      context: ./docker/nominatim
+    container_name: swh_nominatim
+    ports:
+      - "127.0.0.1:${NOMINATIM_HOST_PORT:-8080}:8080"
+    environment:
+      PBF_URL: ${NOMINATIM_PBF_URL:-https://download.geofabrik.de/north-america/us/rhode-island-latest.osm.pbf}
+      IMPORT_TIGER_ADDRESSES: ${NOMINATIM_IMPORT_TIGER_ADDRESSES:-true}
+      THREADS: ${NOMINATIM_THREADS:-4}
+      # NOMINATIM_DB_PASSWORD must be set in .env — fail fast if missing.
+      # Same precedent as the Neo4j service above; CI workflow appends
+      # a placeholder value to .env before `compose build` so the
+      # whole-file validation succeeds for unrelated services.
+      NOMINATIM_PASSWORD: ${NOMINATIM_DB_PASSWORD:?Set NOMINATIM_DB_PASSWORD in .env}
+    volumes:
+      - swh_nominatim_data:/var/lib/postgresql/16/main
+      - swh_nominatim_flatnode:/nominatim/flatnode
+    shm_size: 1g
+    restart: unless-stopped
+    profiles: [geocoding, full]
+
 volumes:
   swh_pg_data:
   swh_neo4j_data:
   swh_neo4j_logs:
   swh_sedonadb_data:
+  swh_nominatim_data:
+  swh_nominatim_flatnode:

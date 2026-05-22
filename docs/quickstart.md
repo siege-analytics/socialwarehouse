@@ -149,13 +149,77 @@ You've got:
 
 ## What's next
 
-- **Customize for your jurisdiction.** Once `manage.py template_init` lands (G.2, tracked at SW#195), the clone-and-rename step will produce a renamed instance with your project's name + a chosen state subset baked in.
+- **Customize for your jurisdiction.** Set `SW_PROJECT_NAME` in `.env` to your project's identifier (`manage.py template_init` writes this for you). The Django package directory stays as `socialwarehouse/`, so upstream merges keep working; the project-friendly name surfaces in admin labels, dashboards, and operator-facing strings. If you genuinely need a renamed Django package, see ["Renaming the Django package (advanced)"](#renaming-the-django-package-advanced) below.
 - **Add an ingest path for a data source we don't ship.** Use D/E/F's existing patterns as the template — each domain's `services/` and `management/commands/` directories show the shape.
 - **Bring your own boundary types.** SU's `geo.django.models.*` is the upstream home for new boundary models; SW adds the `{type}_geoid` cache field on Address + ABP.
 - **Cron a TIGER vintage refresh.** SU ships `siege_utilities.geo.providers.CensusTIGERProvider.list_available_vintages()` and `siege_utilities.geo.census.tiger_state.check_for_updates(state_file)` for "is a new TIGER vintage published?" checks. Wire those into your scheduler; on a "yes," call `CensusTIGERProvider.get_boundary(...)` for the levels you want. (SW used to ship `scripts/fetch_census_tiger.py` for this; deleted in favor of the SU helpers.)
+
+## Fork-and-rename ergonomics
+
+For forkers building their own civic / electoral / domain warehouse on top of SW, almost everything customizes via configuration — not by renaming the Python package. The supported customizations:
+
+| Customization | Mechanism | Effort |
+|---|---|---|
+| Project-friendly name (admin / dashboards) | `SW_PROJECT_NAME` env var (set by `template_init`) | trivial |
+| Default seed states | `SW_DEFAULT_STATES` env var; `seed_demo --states` | trivial |
+| Postgres DB name + user | `POSTGRES_DB` / `POSTGRES_USER` env vars | trivial |
+| Census API key | `CENSUS_API_KEY` env var | trivial |
+| Warehouse storage root | `SW_WAREHOUSE_ROOT` env var (file:// for local, s3a:// for cloud) | trivial |
+| Add a new domain (school / health / civic-engagement) | Copy the `socialwarehouse/<domain>/` app pattern (services / models / commands) | medium |
+| Add a new boundary type | Add the `{type}_geoid` cache field on Address + ABP; register in `_BOUNDARY_TYPES` | medium |
+| Replace a vendor data source | Implement the vendor adapter under `swh/voters/<vendor>/` per the documented contract in `docs/entities/voter-file-ingest.md` | medium |
+
+Everything in this table works WITHOUT renaming the `socialwarehouse` Python package. Upstream merges from siege-analytics/socialwarehouse keep working because import paths haven't moved.
+
+### Renaming the Django package (advanced)
+
+Only do this if your project genuinely needs a different module name (e.g. for trademark / namespacing / public-facing-API reasons). The cost is real:
+
+- **Every upstream change to `socialwarehouse.*` imports requires manual re-mapping** when you merge. Tools like `git merge` will not auto-resolve module-rename diffs; you'll see large conflict blocks on every import-edit upstream.
+- **Migration history annotation**: Django migrations carry app labels in their state files. Renaming an app (e.g. `sw_geo` → `myproject_geo`) requires either squashing migrations + dropping the old app's migration history, or shipping stub migrations that bridge the old label to the new one. The Django docs cover this; it's a meaningful one-time investment.
+- **Coordinating with siege_utilities**: SU ships geographic models that SW extends. The SU integration depends on Django app labels; if you rename SW's apps you'll need to verify SU's models still resolve correctly against your renamed targets.
+
+If you've accepted those costs, the rename recipe:
+
+```bash
+# 1. Pick the new package name (e.g. "myproject"). Choose carefully —
+# changing it again later compounds the upstream-merge cost.
+NEW_NAME=myproject
+
+# 2. Rename the package directory.
+git mv socialwarehouse "$NEW_NAME"
+
+# 3. Update every import-from / from-import / app-config reference.
+# This is mechanical sed but touches ~92 Python files. Review each one.
+grep -rl "socialwarehouse\." --include="*.py" | xargs sed -i.bak \
+  "s/from socialwarehouse\./from $NEW_NAME./g; s/import socialwarehouse\./import $NEW_NAME./g"
+find . -name "*.bak" -delete
+
+# 4. Update Django app labels in <app>/apps.py. Each is currently "sw_*"
+# (e.g. sw_geo, sw_warehouse). Decide if your project keeps the sw_
+# prefix or moves to a new one; if changing, ALSO update every existing
+# migration's app_label reference + every model's Meta.app_label if set.
+
+# 5. Update INSTALLED_APPS in <new_name>/settings/base.py to match.
+
+# 6. Update setup-time references: pyproject.toml [project] name,
+# manage.py DJANGO_SETTINGS_MODULE default, any Docker compose service
+# names that reference socialwarehouse.
+
+# 7. Squash or stub-migrate the renamed apps to fix migration state.
+# See https://docs.djangoproject.com/en/5.2/topics/migrations/#migration-files
+# for the squashmigrations recipe.
+
+# 8. Run the full test suite. Expect ~5-10 import errors on first run;
+# fix them iteratively.
+python manage.py test
+```
+
+Pre-rename: confirm you've actually outgrown the env-var customization path above. The cost of renaming compounds with every upstream merge; the cost of keeping the package name is zero.
 
 ## References
 
 - Template-readiness initiative: [#189](https://github.com/siege-analytics/socialwarehouse/issues/189)
 - G design (merged): [#211](https://github.com/siege-analytics/socialwarehouse/pull/211)
 - Initiative entity docs: `docs/entities/`
+- Fork-and-rename audit: [#267](https://github.com/siege-analytics/socialwarehouse/issues/267)

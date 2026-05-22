@@ -29,6 +29,10 @@ Any new failure on a PR is a real regression and must be investigated before mer
 - Cut a release by: bumping both version strings (drop `-dev` suffix), merging the bump PR, tagging the resulting commit, pushing the tag, creating a GitHub release with notes. Then follow up with a `-dev`-suffix bump to the next version on `main`.
 - See the v2.0.0 release (`cd0d609`) as the canonical example.
 
+## Architectural principles
+
+[`docs/architecture.md`](docs/architecture.md) captures the project-level architectural rules every design respects. The foundational one — **warehouse first, web app last** — fixes design order (Delta → PostGIS star schema → Django ORM) and sub-issue sequencing. Read it before designing anything that touches data.
+
 ## Skill / discipline references
 
 This repo participates in the workspace's always-on rule discipline. Relevant rules:

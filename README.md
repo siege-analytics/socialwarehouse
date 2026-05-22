@@ -26,6 +26,10 @@ Intended growth:
 - Media markets
 - Officials and jurisdictions
 
+## Architecture
+
+See [`docs/architecture.md`](docs/architecture.md) for project-level architectural principles. The foundational rule: **warehouse first, web app last** — Delta Lake schemas are canonical; PostGIS star-schema dimensional models are the serving tier; the Django web app is a downstream read-only consumer.
+
 ## Cloning
 
 This repo uses a git submodule for the GeoDjango template (GST) at `vendor/geodjango_simple_template/`. Clone with submodules:

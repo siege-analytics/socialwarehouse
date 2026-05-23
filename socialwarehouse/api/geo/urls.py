@@ -12,4 +12,5 @@ urlpatterns = [
     path("boundaries/<str:boundary_type>/<str:geoid>/", views.boundary_detail, name="boundary_detail"),
     path("proximity/", views.proximity, name="proximity"),
     path("intersections/", views.intersections, name="intersections"),
+    path("civic_lookup/", views.CivicLookupView.as_view(), name="civic_lookup"),
 ]

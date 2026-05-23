@@ -12,9 +12,14 @@ from django.urls import reverse
 
 
 @pytest.fixture
-def api_client():
+def api_client(db):
+    from django.contrib.auth import get_user_model
     from rest_framework.test import APIClient
-    return APIClient()
+    User = get_user_model()
+    user, _ = User.objects.get_or_create(username="civic-lookup-test")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    return client
 
 
 @pytest.fixture

@@ -539,3 +539,242 @@ def _get_demographics_for_boundaries(boundaries, year=None):
             }
 
     return demographics
+
+
+# ── Civic lookup (SW#272) ────────────────────────────────────────────
+# Address -> district memberships. Composes the F11 boundary-cache
+# fields on geo.Address into a single response. See
+# `docs/api/civic-lookup.md` for the full contract.
+
+from rest_framework.views import APIView
+
+from socialwarehouse.api.geo.serializers import (
+    AddressSummarySerializer,
+    AddressWithGeometrySerializer,
+    PersonSummarySerializer,
+)
+from socialwarehouse.geo.models import Address
+from socialwarehouse.warehouse.models import (
+    DimGeography,
+    DimPerson,
+    DimRedistrictingCycle,
+)
+
+
+# Address boundary-cache field name -> response district key + DimGeography
+# summary_level. Cache field null -> district key omitted from response.
+_DISTRICT_FIELDS = (
+    ("state_geoid", "state", "state"),
+    ("county_geoid", "county", "county"),
+    ("tract_geoid", "tract", "tract"),
+    ("block_group_geoid", "block_group", "blockgroup"),
+    ("block_geoid", "block", "block"),
+    ("vtd_geoid", "vtd", "vtd"),
+    ("cd_geoid", "congressional", "cd"),
+    ("sldu_geoid", "state_senate", "sldu"),
+    ("sldl_geoid", "state_house", "sldl"),
+    ("zcta_geoid", "zcta", "zcta"),
+)
+
+_TRUTHY = {"1", "true", "yes", "y", "t"}
+
+
+def _parse_bool(val):
+    """Tolerant bool parser; default False on missing/unknown."""
+    if val is None:
+        return False
+    return str(val).strip().lower() in _TRUTHY
+
+
+def _lookup_canonical_address(address_str, state=None):
+    """Return list of Address rows matching the input string.
+
+    v1 is a literal-match path: parses the address into best-guess parts
+    (primary_number + street_name + city_name + zcta_geoid as USPS-ZIP proxy) and queries.
+    Returns 0, 1, or N rows; caller decides 404 / 200 / 409.
+
+    Live geocoding for a fresh-address fallback is a follow-on; that
+    path goes through the existing /api/geo/geocode/ endpoint first.
+    """
+    parts = [p.strip() for p in address_str.split(",")]
+    qs = Address.objects.all()
+    if state:
+        qs = qs.filter(state_abbreviation__iexact=state)
+
+    # Naive split: "123 Main St, Austin, TX 78701" -> primary_number, street,
+    # city, state+zip. Operators with structured input should supply the
+    # full canonical form; v1 doesn't try to be clever about parsing.
+    if not parts:
+        return list(qs[:5])
+
+    # First chunk: house number + street.
+    head_tokens = parts[0].split()
+    if head_tokens:
+        first = head_tokens[0]
+        if first.isdigit():
+            qs = qs.filter(primary_number=first)
+            street_parts = head_tokens[1:]
+        else:
+            street_parts = head_tokens
+        if street_parts:
+            street_query = " ".join(street_parts)
+            qs = qs.filter(street_name__iexact=street_query) | qs.filter(
+                street_name__istartswith=street_parts[0]
+            )
+
+    # Second chunk: city (if present).
+    if len(parts) > 1 and parts[1]:
+        qs = qs.filter(city_name__iexact=parts[1])
+
+    # Third chunk: state + zip (zip is what disambiguates).
+    if len(parts) > 2 and parts[2]:
+        for token in parts[2].split():
+            if token.isdigit() and len(token) >= 5:
+                # Address has no canonical zip field; zcta_geoid is the USPS-ZIP-like
+                # proxy (Census ZIP Code Tabulation Area). Note ZCTA != ZIP exactly
+                # but aligns for the bulk of residential addresses.
+                qs = qs.filter(zcta_geoid=token[:5])
+
+    return list(qs.order_by("id")[:10])
+
+
+def _resolve_districts(address):
+    """Read non-null boundary-cache fields off Address and look up names.
+
+    DimGeography lookup is best-effort: queries by (geoid,
+    vintage_year=address.census_year). Name null when no matching row.
+    Null cache fields are OMITTED from the dict (not emitted as null)
+    so absence is visible.
+    """
+    out = {}
+    vintage = address.census_year or None
+
+    geoids_to_lookup = {}
+    for field_name, response_key, summary_level in _DISTRICT_FIELDS:
+        geoid = getattr(address, field_name, None) or None
+        if geoid:
+            out[response_key] = {"geoid": geoid, "name": None}
+            geoids_to_lookup[response_key] = (geoid, summary_level)
+
+    if not geoids_to_lookup:
+        return out
+
+    # One query against DimGeography; map (geoid, summary_level) -> name.
+    geoid_list = [g for g, _ in geoids_to_lookup.values()]
+    dim_filter = {"geoid__in": geoid_list}
+    if vintage:
+        dim_filter["vintage_year"] = vintage
+    dim_rows = DimGeography.objects.filter(**dim_filter).values(
+        "geoid", "summary_level", "name"
+    )
+    name_lookup = {(r["geoid"], r["summary_level"]): r["name"] for r in dim_rows}
+
+    for response_key, (geoid, summary_level) in geoids_to_lookup.items():
+        name = name_lookup.get((geoid, summary_level))
+        if name:
+            out[response_key]["name"] = name
+
+    return out
+
+
+def _resolve_redistricting_cycle(address):
+    """Return {cycle_year, first_election_year} or None."""
+    if not address.census_year:
+        return None
+    cycle = (
+        DimRedistrictingCycle.objects.filter(census_year=address.census_year)
+        .order_by("cycle_year")
+        .first()
+    )
+    if cycle is None:
+        return None
+    return {
+        "cycle_year": cycle.cycle_year,
+        "first_election_year": cycle.first_election_year,
+    }
+
+
+def _resolve_people(address):
+    """Return {count, items} for DimPerson rows at the address."""
+    qs = DimPerson.objects.filter(address=address).order_by("vendor", "vendor_voter_id")
+    items = PersonSummarySerializer(qs, many=True).data
+    return {"count": len(items), "items": items}
+
+
+def _not_found_payload(state=None):
+    """Compose the 404 response with the geocode-endpoint hint."""
+    if state:
+        error = f"no matching Address row found in state {state}"
+        hint = (
+            "POST or GET /api/geo/geocode/?address=<...> to resolve a new "
+            "address before calling civic_lookup, or omit ?state= to "
+            "broaden the search"
+        )
+    else:
+        error = "no matching Address row found"
+        hint = (
+            "POST or GET /api/geo/geocode/?address=<...> to resolve a new "
+            "address before calling civic_lookup"
+        )
+    return {"error": error, "code": "address_not_found", "hint": hint}
+
+
+class CivicLookupView(APIView):
+    """Address -> district memberships endpoint.
+
+    GET /api/geo/civic_lookup/?address=<str>[&state=<usps>][&include_people=true|false][&include_geometry=true|false]
+
+    See `docs/api/civic-lookup.md` for the full contract.
+    """
+
+    throttle_classes = [GeocodeThrottle]
+
+    def get(self, request):
+        address_str = request.query_params.get("address", "").strip()
+        if not address_str:
+            return Response(
+                {
+                    "error": "address query parameter is required",
+                    "code": "missing_address",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        state_raw = request.query_params.get("state", "").strip().upper()
+        state = state_raw or None
+        include_people = _parse_bool(request.query_params.get("include_people"))
+        include_geometry = _parse_bool(request.query_params.get("include_geometry"))
+
+        candidates = _lookup_canonical_address(address_str, state=state)
+        if not candidates:
+            return Response(
+                _not_found_payload(state), status=status.HTTP_404_NOT_FOUND
+            )
+        if len(candidates) > 1:
+            return Response(
+                {
+                    "error": "multiple Address rows match; refine the query",
+                    "code": "ambiguous_address",
+                    "candidate_count": len(candidates),
+                    "hint": "supply ?state=<USPS> or include a more specific address line",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        address = candidates[0]
+        if include_geometry:
+            address_data = AddressWithGeometrySerializer(address).data
+        else:
+            address_data = AddressSummarySerializer(address).data
+
+        payload = {
+            "address": address_data,
+            "districts": _resolve_districts(address),
+        }
+        cycle = _resolve_redistricting_cycle(address)
+        if cycle is not None:
+            payload["redistricting_cycle"] = cycle
+        if include_people:
+            payload["people"] = _resolve_people(address)
+
+        return Response(payload, status=status.HTTP_200_OK)

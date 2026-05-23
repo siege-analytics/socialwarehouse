@@ -141,7 +141,7 @@ class TestAmbiguous:
             city_name="Austin", state_abbreviation="TX",
         )
         resp = api_client.get(
-            lookup_url, {"address": "100 Common, Austin, TX 78701"}
+            lookup_url, {"address": "100 Common, Austin, TX"}
         )
         assert resp.status_code == 409
         body = resp.json()
@@ -155,7 +155,7 @@ class TestHappyPath:
         self, api_client, lookup_url, address_full, dim_geography_tx
     ):
         resp = api_client.get(
-            lookup_url, {"address": "123 Main St, Austin, TX 78701"}
+            lookup_url, {"address": "123 Main St, Austin, TX"}
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -181,7 +181,7 @@ class TestHappyPath:
         self, api_client, lookup_url, address_no_cd
     ):
         resp = api_client.get(
-            lookup_url, {"address": "456 Oak, Houston, TX 77002"}
+            lookup_url, {"address": "456 Oak, Houston, TX"}
         )
         assert resp.status_code == 200
         d = resp.json()["districts"]
@@ -198,7 +198,7 @@ class TestHappyPath:
         self, api_client, lookup_url, address_full, redistricting_cycle_2020
     ):
         resp = api_client.get(
-            lookup_url, {"address": "123 Main St, Austin, TX 78701"}
+            lookup_url, {"address": "123 Main St, Austin, TX"}
         )
         assert resp.status_code == 200
         body = resp.json()
@@ -211,7 +211,7 @@ class TestHappyPath:
     ):
         # No DimRedistrictingCycle seeded => block omitted
         resp = api_client.get(
-            lookup_url, {"address": "123 Main St, Austin, TX 78701"}
+            lookup_url, {"address": "123 Main St, Austin, TX"}
         )
         assert resp.status_code == 200
         assert "redistricting_cycle" not in resp.json()
@@ -223,7 +223,7 @@ class TestIncludeFlags:
         self, api_client, lookup_url, address_full
     ):
         resp = api_client.get(
-            lookup_url, {"address": "123 Main St, Austin, TX 78701"}
+            lookup_url, {"address": "123 Main St, Austin, TX"}
         )
         assert resp.status_code == 200
         assert "people" not in resp.json()
@@ -239,7 +239,7 @@ class TestIncludeFlags:
         )
         resp = api_client.get(
             lookup_url,
-            {"address": "123 Main St, Austin, TX 78701", "include_people": "true"},
+            {"address": "123 Main St, Austin, TX", "include_people": "true"},
         )
         assert resp.status_code == 200
         people = resp.json()["people"]
@@ -252,7 +252,7 @@ class TestIncludeFlags:
     ):
         resp = api_client.get(
             lookup_url,
-            {"address": "123 Main St, Austin, TX 78701", "include_geometry": "true"},
+            {"address": "123 Main St, Austin, TX", "include_geometry": "true"},
         )
         assert resp.status_code == 200
         geom = resp.json()["address"]["geom"]
@@ -265,7 +265,7 @@ class TestIncludeFlags:
         self, api_client, lookup_url, address_full
     ):
         resp = api_client.get(
-            lookup_url, {"address": "123 Main St, Austin, TX 78701"}
+            lookup_url, {"address": "123 Main St, Austin, TX"}
         )
         assert resp.status_code == 200
         assert "geom" not in resp.json()["address"]
@@ -289,7 +289,7 @@ class TestStateFilter:
         )
         resp = api_client.get(
             lookup_url,
-            {"address": "200 Universal, Austin, TX 78701", "state": "tx"},
+            {"address": "200 Universal, Austin, TX", "state": "tx"},
         )
         assert resp.status_code == 200
         assert resp.json()["address"]["state_abbreviation"] == "TX"

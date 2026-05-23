@@ -1,0 +1,180 @@
+"""Reusable Dagster asset factories for socialwarehouse.
+
+The factories produce ``AssetsDefinition`` objects whose keys derive
+from ``socialwarehouse.delta.config.get_table_path()`` so the asset
+graph and the on-disk Delta layout stay coupled by construction.
+
+Instance projects use these factories to register their own assets
+without copying the wiring boilerplate:
+
+.. code-block:: python
+
+    from socialwarehouse.orchestration.asset_factories import (
+        delta_table_asset,
+        postgis_materialization_asset,
+    )
+    from socialwarehouse.delta import tables as t
+
+    addresses_silver = delta_table_asset(
+        layer="silver",
+        table="addresses_typed",
+        deps=["bronze/addresses_raw"],
+        compute_fn=lambda spark, ctx: spark.sql(...)
+    )
+"""
+
+from __future__ import annotations
+
+from typing import Callable, Iterable, Optional
+
+from dagster import AssetExecutionContext, AssetsDefinition, AssetKey, MaterializeResult, asset
+
+
+def _key_for(layer: str, table: str) -> AssetKey:
+    """Asset key = ('warehouse', '<layer>', '<table>'); mirrors Delta layout."""
+    return AssetKey(["warehouse", layer, table])
+
+
+def delta_table_asset(
+    *,
+    layer: str,
+    table: str,
+    deps: Optional[Iterable[str]] = None,
+    compute_fn: Callable[[AssetExecutionContext, "SparkSession"], None],  # noqa: F821
+    description: Optional[str] = None,
+    group_name: Optional[str] = None,
+) -> AssetsDefinition:
+    """Factory: build a Dagster asset that materializes a Delta table.
+
+    ``compute_fn`` receives the asset context and a live SparkSession
+    (from ``SparkResource``) and is responsible for writing the Delta
+    table at ``get_table_path(layer, table)``. The factory handles
+    asset-key derivation, dep wiring, and result reporting.
+
+    Args:
+        layer: 'bronze' | 'silver' | 'gold'
+        table: table name within the layer (matches delta/tables.py)
+        deps: list of dep strings like 'bronze/addresses_raw' that
+              resolve to AssetKey(['warehouse', 'bronze', 'addresses_raw'])
+        compute_fn: callable(context, spark) -> None that writes the Delta table
+        description: optional human-readable description (defaults to a stock string)
+        group_name: optional Dagster group (defaults to the layer)
+    """
+    from socialwarehouse.delta.config import get_table_path
+    from socialwarehouse.orchestration.resources import SparkResource
+
+    dep_keys = []
+    for d in deps or []:
+        dep_layer, dep_table = d.split("/", 1)
+        dep_keys.append(_key_for(dep_layer, dep_table))
+
+    @asset(
+        key=_key_for(layer, table),
+        deps=dep_keys,
+        description=description or f"Delta table {layer}.{table} (path: {get_table_path(layer, table)})",
+        group_name=group_name or layer,
+        required_resource_keys={"spark"},
+    )
+    def _delta_asset(context: AssetExecutionContext) -> MaterializeResult:
+        spark_resource: SparkResource = getattr(context.resources, "spark")
+        with spark_resource.session(context) as spark:
+            compute_fn(context, spark)
+        table_path = get_table_path(layer, table)
+        # Read back row count for the materialization metadata; cheap when
+        # the table is freshly written. If this becomes load-bearing on
+        # large tables, swap for an estimate or skip.
+        row_count = spark.read.format("delta").load(table_path).count()
+        return MaterializeResult(
+            metadata={
+                "path": table_path,
+                "row_count": row_count,
+                "layer": layer,
+            }
+        )
+
+    return _delta_asset
+
+
+def postgis_materialization_asset(
+    *,
+    source_layer: str,
+    source_table: str,
+    target_django_app_label: str,
+    target_django_model_name: str,
+    compute_sql: Callable[["SparkSession", str], "DataFrame"],  # noqa: F821
+    description: Optional[str] = None,
+    group_name: str = "postgis",
+) -> AssetsDefinition:
+    """Factory: build a Dagster asset that materializes a Delta table into PostGIS.
+
+    The flow: read the source Delta table, run ``compute_sql`` to shape
+    it into the target schema, write to PostGIS via SQLAlchemy
+    ``to_sql`` (or COPY for large loads — see follow-on observability
+    sub-issue for the threshold).
+
+    ``compute_sql(spark, source_path)`` is called with the SparkSession
+    and the source Delta path; it returns the DataFrame to write to
+    PostGIS. The target table is computed from the Django model's
+    ``_meta.db_table``.
+
+    Args:
+        source_layer: 'silver' | 'gold' (bronze rarely materializes to PostGIS)
+        source_table: source table name in the Delta layer
+        target_django_app_label: e.g. 'geo'
+        target_django_model_name: e.g. 'Address'
+        compute_sql: callable(spark, source_path) -> DataFrame (shape for PostGIS)
+        description: optional override
+        group_name: Dagster group name (default 'postgis')
+    """
+    from socialwarehouse.delta.config import get_table_path
+    from socialwarehouse.orchestration.resources import PostGISResource, SparkResource
+
+    @asset(
+        key=AssetKey(["postgis", target_django_app_label, target_django_model_name.lower()]),
+        deps=[_key_for(source_layer, source_table)],
+        description=description
+        or f"PostGIS materialization: {source_layer}.{source_table} -> {target_django_app_label}.{target_django_model_name}",
+        group_name=group_name,
+        required_resource_keys={"spark", "postgis"},
+    )
+    def _postgis_asset(context: AssetExecutionContext) -> MaterializeResult:
+        spark_resource: SparkResource = getattr(context.resources, "spark")
+        postgis_resource: PostGISResource = getattr(context.resources, "postgis")
+
+        source_path = get_table_path(source_layer, source_table)
+
+        with spark_resource.session(context) as spark:
+            df = compute_sql(spark, source_path)
+            # Convert to Pandas for SQLAlchemy load. For datasets above
+            # ~1M rows, swap for parquet-out + PostgreSQL COPY (tracked
+            # in the observability sub-issue).
+            pdf = df.toPandas()
+
+        django_model = _resolve_django_model(target_django_app_label, target_django_model_name)
+        table_name = django_model._meta.db_table
+
+        with postgis_resource.engine() as engine:
+            pdf.to_sql(table_name, engine, if_exists="append", index=False, method="multi")
+
+        return MaterializeResult(
+            metadata={
+                "source_path": source_path,
+                "target_table": table_name,
+                "row_count": len(pdf),
+            }
+        )
+
+    return _postgis_asset
+
+
+def _resolve_django_model(app_label: str, model_name: str):
+    """Resolve a Django model class via the app registry.
+
+    Imported lazily to keep import-time light when only Spark assets
+    are used without the Django ORM.
+    """
+    import django
+
+    if not django.apps.apps.ready:
+        django.setup()
+    return django.apps.apps.get_model(app_label, model_name)

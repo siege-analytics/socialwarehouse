@@ -91,6 +91,39 @@ It is recommended that you create a generalized `.yml` file for each image you b
 
 For instance, we define image-building configurations in `docker/spark-build-image.yml` and define our integration of the image into the various services in `docker/spark.profile.yml`. You can see how we use one image in multiple services with different envrionment variables and volumes.
 
+## Running Dagster locally
+
+Warehouse pipeline orchestration lives in `socialwarehouse/orchestration/`
+and is an **optional extra** — install with:
+
+```bash
+pip install -e ".[orchestration]"
+```
+
+Set the standard SW env vars (warehouse root, S3 creds, Django settings module)
+in your `.env`, then launch the Dagster dev UI:
+
+```bash
+export DJANGO_SETTINGS_MODULE=socialwarehouse.settings.dev
+export SW_WAREHOUSE_ROOT=file:///tmp/sw-warehouse   # or s3a://your-bucket
+dagster dev -m socialwarehouse.orchestration
+```
+
+Open http://localhost:3000 to see the asset graph, schedules, and
+sensors. The demo `geo` asset graph (bronze `addresses_raw` → silver
+`addresses_typed` → gold `addresses_enriched` → PostGIS `geo.address`)
+materializes end-to-end via `dagster asset materialize -m
+socialwarehouse.orchestration --select '*'`.
+
+**Separation from Celery:** Dagster handles warehouse pipeline
+orchestration (scheduled refreshes, sensor-driven backfills,
+Delta→PostGIS materialization). Celery (`socialwarehouse.celery_app`)
+handles web-app-triggered async tasks. They coexist without overlap.
+
+**Instance projects** extending this template add their own domain
+assets via the factory pattern; see
+`docs/orchestration/instance-project-guide.md`.
+
 ## References
 
 - [How to make sdkman run in Dockerfile](16)

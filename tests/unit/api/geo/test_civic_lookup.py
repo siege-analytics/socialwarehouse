@@ -27,8 +27,6 @@ def address_full(db):
         street_suffix="St",
         city_name="Austin",
         state_abbreviation="TX",
-        zip5="78701",
-        zip4="1234",
         latitude=Decimal("30.2672"),
         longitude=Decimal("-97.7431"),
         geom=Point(-97.7431, 30.2672, srid=4326),
@@ -57,7 +55,6 @@ def address_no_cd(db):
         street_name="Oak",
         city_name="Houston",
         state_abbreviation="TX",
-        zip5="77002",
         latitude=Decimal("29.7604"),
         longitude=Decimal("-95.3698"),
         census_year=2020,
@@ -132,11 +129,11 @@ class TestAmbiguous:
         # Two rows that match the same address string.
         Address.objects.create(
             primary_number="100", street_name="Common",
-            city_name="Austin", state_abbreviation="TX", zip5="78701",
+            city_name="Austin", state_abbreviation="TX",
         )
         Address.objects.create(
             primary_number="100", street_name="Common",
-            city_name="Austin", state_abbreviation="TX", zip5="78701",
+            city_name="Austin", state_abbreviation="TX",
         )
         resp = api_client.get(
             lookup_url, {"address": "100 Common, Austin, TX 78701"}
@@ -277,12 +274,12 @@ class TestStateFilter:
         from socialwarehouse.geo.models import Address
         Address.objects.create(
             primary_number="200", street_name="Universal",
-            city_name="Austin", state_abbreviation="TX", zip5="78701",
+            city_name="Austin", state_abbreviation="TX",
             census_year=2020, state_geoid="48",
         )
         Address.objects.create(
             primary_number="200", street_name="Universal",
-            city_name="Austin", state_abbreviation="MN", zip5="55401",
+            city_name="Austin", state_abbreviation="MN",
             census_year=2020, state_geoid="27",
         )
         resp = api_client.get(

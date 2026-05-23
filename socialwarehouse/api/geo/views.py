@@ -590,7 +590,7 @@ def _lookup_canonical_address(address_str, state=None):
     """Return list of Address rows matching the input string.
 
     v1 is a literal-match path: parses the address into best-guess parts
-    (primary_number + street_name + city_name + zip5) and queries.
+    (primary_number + street_name + city_name + zcta_geoid as USPS-ZIP proxy) and queries.
     Returns 0, 1, or N rows; caller decides 404 / 200 / 409.
 
     Live geocoding for a fresh-address fallback is a follow-on; that
@@ -630,7 +630,10 @@ def _lookup_canonical_address(address_str, state=None):
     if len(parts) > 2 and parts[2]:
         for token in parts[2].split():
             if token.isdigit() and len(token) >= 5:
-                qs = qs.filter(zip5=token[:5])
+                # Address has no canonical zip field; zcta_geoid is the USPS-ZIP-like
+                # proxy (Census ZIP Code Tabulation Area). Note ZCTA != ZIP exactly
+                # but aligns for the bulk of residential addresses.
+                qs = qs.filter(zcta_geoid=token[:5])
 
     return list(qs.order_by("id")[:10])
 

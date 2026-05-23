@@ -38,8 +38,7 @@ Districts are emitted only for non-null boundary-cache fields on the matched Add
     "street_suffix": "St",
     "city_name": "Austin",
     "state_abbreviation": "TX",
-    "zip5": "78701",
-    "zip4": "1234",
+    "zcta_geoid": "78701",
     "latitude": "30.2672000000000000",
     "longitude": "-97.7431000000000000",
     "geocoded": true,
@@ -118,6 +117,7 @@ Returned when multiple Address rows match the input. The endpoint refuses to gue
 - **F11 cache is authoritative.** If `cd_geoid` is null on the matched Address row, the response omits `congressional` entirely. We do NOT synthesize from a spatial query against `DimGeography.geometry`. This is a deliberate vintage-integrity choice: the cache row is the answer to "what district was this address in under the census_year plan?"; spatial fallback would answer "what district intersects this point under whatever plan is current?" — a subtly different question.
 - **PII-friendly defaults.** `include_people=false` by default. The minimal `PersonSummarySerializer` returned when opted-in surfaces only `vendor`, `vendor_voter_id`, and `registration_state` — no name, DOB, contact info, scoring, or vote history.
 - **No geometry by default.** `include_geometry=false` keeps the response light; opt in when the consumer specifically needs the Point.
+- **ZCTA vs ZIP.** The Address model has no canonical USPS-ZIP field; the `zcta_geoid` (Census ZIP Code Tabulation Area) is the USPS-ZIP-like proxy used for lookup + response. ZCTA aligns with USPS ZIP for the bulk of residential addresses but is not identical (PO boxes, military, sparse rural areas can differ). If your consumer needs strict USPS ZIP matching, that's a follow-on (would require an `Address.zip5` field + a migration + a re-ingest pass).
 
 ## See also
 

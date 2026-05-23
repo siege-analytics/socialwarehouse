@@ -43,8 +43,17 @@ analysis = [
     "tobler>=0.12",
     "scipy>=1.14",
 ]
+orchestration = [
+    # Dagster orchestration layer for warehouse pipeline scheduling.
+    # See socialwarehouse/orchestration/ and docs/orchestration/.
+    # Separate from Celery (which handles web-app-triggered async tasks).
+    "dagster>=1.9,<2",
+    "dagster-webserver>=1.9,<2",
+    "dagster-postgres>=0.25,<1",
+    "dagster-spark>=0.25,<1",
+]
 full = [
-    "socialwarehouse[spark,analysis]",
+    "socialwarehouse[spark,analysis,orchestration]",
     "polars>=1.0",
 ]
 dev = [

@@ -1,0 +1,8 @@
+from django.apps import AppConfig
+
+
+class AgentsConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "socialwarehouse.agents"
+    label = "sw_agents"
+    verbose_name = "SocialWarehouse Agents"

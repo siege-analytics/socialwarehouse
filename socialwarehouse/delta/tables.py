@@ -276,6 +276,35 @@ SILVER_ENTITY_IDENTIFIERS = StructType([
 ])
 
 
+# ── Agent schemas (Committee, Organization) ─────────────────────────────
+
+SILVER_COMMITTEES = StructType([
+    StructField("entity_uuid", StringType(), False),
+    StructField("name", StringType(), False),
+    StructField("committee_type", StringType(), True),
+    StructField("source_system_id", StringType(), False),
+    StructField("formation_date", DateType(), True),
+    StructField("termination_date", DateType(), True),
+    StructField("data_source", StringType(), False),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("source_record_id", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_ORGANIZATIONS = StructType([
+    StructField("entity_uuid", StringType(), False),
+    StructField("name", StringType(), False),
+    StructField("industry_code", StringType(), True),
+    StructField("industry_system", StringType(), True),
+    StructField("data_source", StringType(), False),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("source_record_id", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+
 # ── Table registry ───────────────────────────────────────────────────────
 
 TABLES = {
@@ -353,6 +382,19 @@ TABLES = {
         "path": get_table_path("silver", "entity_identifiers"),
         "partition_by": ["data_source"],
         "description": "Cross-source entity identifier log for resolution",
+    },
+    # Agents
+    "silver.committees": {
+        "schema": SILVER_COMMITTEES,
+        "path": get_table_path("silver", "committees"),
+        "partition_by": ["jurisdiction_level", "jurisdiction_state"],
+        "description": "Committee records with lifecycle tracking",
+    },
+    "silver.organizations": {
+        "schema": SILVER_ORGANIZATIONS,
+        "path": get_table_path("silver", "organizations"),
+        "partition_by": ["jurisdiction_state"],
+        "description": "Organization records with industry classification",
     },
     # Gold
     "gold.enriched_addresses": {

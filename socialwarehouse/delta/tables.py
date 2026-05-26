@@ -200,6 +200,11 @@ SILVER_PERSONS = StructType([
     StructField("vote_frequency_category", StringType(), True),
     # Evolvable vendor extension bag (see schema-evolution doc)
     StructField("vendor_extras", MapType(StringType(), StringType()), True),
+    # Ontology mixin fields (A-1 / #286)
+    StructField("entity_uuid", StringType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("source_record_id", StringType(), True),
     # Provenance
     StructField("source_file", StringType(), True),
     StructField("ingested_at", TimestampType(), False),
@@ -257,6 +262,240 @@ GOLD_ENRICHED_ADDRESSES = StructType([
     # Urbanicity
     StructField("locale_code", IntegerType(), True),
     StructField("locale_category", StringType(), True),
+])
+
+
+# ── Core schemas (cross-source entity resolution) ───────────────────────
+
+SILVER_ENTITY_IDENTIFIERS = StructType([
+    StructField("entity_uuid", StringType(), False),
+    StructField("identifier_type", StringType(), False),
+    StructField("identifier_value", StringType(), False),
+    StructField("data_source", StringType(), False),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("normalizer_version", IntegerType(), False),
+    StructField("valid_from", TimestampType(), False),
+    StructField("valid_to", TimestampType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+
+# ── Facet schemas (Classification, Role) ─────────────────────────────────
+
+SILVER_CLASSIFICATIONS = StructType([
+    StructField("classification_uuid", StringType(), False),
+    StructField("agent_uuid", StringType(), False),
+    StructField("agent_type", StringType(), False),
+    StructField("classification_type", StringType(), False),
+    StructField("value", StringType(), False),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("effective_from", DateType(), True),
+    StructField("effective_to", DateType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_ROLES = StructType([
+    StructField("role_uuid", StringType(), False),
+    StructField("agent_uuid", StringType(), False),
+    StructField("agent_type", StringType(), False),
+    StructField("role_type", StringType(), False),
+    StructField("counterparty_uuid", StringType(), True),
+    StructField("counterparty_type", StringType(), True),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("effective_from", DateType(), True),
+    StructField("effective_to", DateType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+
+# ── Agent schemas (Committee, Organization) ─────────────────────────────
+
+SILVER_COMMITTEES = StructType([
+    StructField("entity_uuid", StringType(), False),
+    StructField("name", StringType(), False),
+    StructField("committee_type", StringType(), True),
+    StructField("source_system_id", StringType(), False),
+    StructField("formation_date", DateType(), True),
+    StructField("termination_date", DateType(), True),
+    StructField("data_source", StringType(), False),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("source_record_id", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_ORGANIZATIONS = StructType([
+    StructField("entity_uuid", StringType(), False),
+    StructField("name", StringType(), False),
+    StructField("industry_code", StringType(), True),
+    StructField("industry_system", StringType(), True),
+    StructField("data_source", StringType(), False),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("source_record_id", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+
+# ── Event schemas ────────────────────────────────────────────────────────
+
+SILVER_EVENTS = StructType([
+    StructField("event_uuid", StringType(), False),
+    StructField("event_type", StringType(), False),
+    StructField("event_date", DateType(), False),
+    StructField("year", IntegerType(), False),
+    StructField("description", StringType(), True),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("source_record_id", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_EVENT_PARTICIPANTS = StructType([
+    StructField("event_uuid", StringType(), False),
+    StructField("agent_uuid", StringType(), False),
+    StructField("agent_type", StringType(), False),
+    StructField("role_in_event", StringType(), False),
+    StructField("event_type", StringType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_EVENTS_CORPORATE = StructType([
+    StructField("event_uuid", StringType(), False),
+    StructField("corporate_event_type", StringType(), False),
+    StructField("predecessor_uuid", StringType(), True),
+    StructField("successor_uuid", StringType(), True),
+    StructField("relationship_uuid", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_EVENTS_SPATIOTEMPORAL = StructType([
+    StructField("event_uuid", StringType(), False),
+    StructField("spatiotemporal_event_type", StringType(), False),
+    StructField("redistricting_plan_id", StringType(), True),
+    StructField("affected_boundary_type", StringType(), True),
+    StructField("affected_jurisdiction_state", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_EVENTS_ELECTORAL = StructType([
+    StructField("event_uuid", StringType(), False),
+    StructField("electoral_event_type", StringType(), False),
+    StructField("contest_uuid", StringType(), True),
+    StructField("is_certified", BooleanType(), False),
+    StructField("is_recount", BooleanType(), False),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+
+# ── Political structure schemas ──────────────────────────────────────────
+
+SILVER_OFFICES = StructType([
+    StructField("office_uuid", StringType(), False),
+    StructField("name", StringType(), False),
+    StructField("jurisdiction_level", StringType(), False),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("chamber", StringType(), True),
+    StructField("district_number", StringType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_SEATS = StructType([
+    StructField("seat_uuid", StringType(), False),
+    StructField("office_uuid", StringType(), False),
+    StructField("redistricting_plan_id", StringType(), True),
+    StructField("effective_from", DateType(), True),
+    StructField("effective_to", DateType(), True),
+    StructField("boundary_geoid", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_ELECTIONS = StructType([
+    StructField("election_uuid", StringType(), False),
+    StructField("election_date", DateType(), False),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("election_type", StringType(), False),
+    StructField("year", IntegerType(), False),
+    StructField("data_source", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_ELECTORAL_CONTESTS = StructType([
+    StructField("contest_uuid", StringType(), False),
+    StructField("election_uuid", StringType(), False),
+    StructField("office_uuid", StringType(), False),
+    StructField("seat_uuid", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("year", IntegerType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_OFFICE_TERMS = StructType([
+    StructField("term_uuid", StringType(), False),
+    StructField("office_uuid", StringType(), False),
+    StructField("person_uuid", StringType(), False),
+    StructField("start_date", DateType(), False),
+    StructField("end_date", DateType(), True),
+    StructField("term_type", StringType(), False),
+    StructField("congress_number", IntegerType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+
+# ── Boundary assignment schemas ──────────────────────────────────────────
+
+SILVER_REDISTRICTING_PLANS = StructType([
+    StructField("plan_uuid", StringType(), False),
+    StructField("state", StringType(), False),
+    StructField("chamber", StringType(), False),
+    StructField("plan_name", StringType(), False),
+    StructField("plan_type", StringType(), False),
+    StructField("effective_from", DateType(), False),
+    StructField("effective_to", DateType(), True),
+    StructField("source", StringType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_ADDRESS_BOUNDARY_PERIODS = StructType([
+    StructField("address_id", LongType(), False),
+    StructField("vintage_decade", IntegerType(), False),
+    StructField("redistricting_plan_id", IntegerType(), True),
+    StructField("context_date", DateType(), True),
+    StructField("state_geoid", StringType(), True),
+    StructField("county_geoid", StringType(), True),
+    StructField("tract_geoid", StringType(), True),
+    StructField("block_group_geoid", StringType(), True),
+    StructField("block_geoid", StringType(), True),
+    StructField("vtd_geoid", StringType(), True),
+    StructField("cd_geoid", StringType(), True),
+    StructField("sldl_geoid", StringType(), True),
+    StructField("sldu_geoid", StringType(), True),
+    StructField("assignment_method", StringType(), True),
+    StructField("assigned_at", TimestampType(), True),
+    StructField("state_abbreviation", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_PRECINCT_VTD_INTERSECTIONS = StructType([
+    StructField("precinct_geoid", StringType(), False),
+    StructField("vtd_geoid", StringType(), False),
+    StructField("election_cycle", IntegerType(), False),
+    StructField("overlap_area_sqm", DoubleType(), True),
+    StructField("overlap_fraction", DoubleType(), True),
+    StructField("state", StringType(), False),
+    StructField("ingested_at", TimestampType(), False),
 ])
 
 
@@ -330,6 +569,139 @@ TABLES = {
         "path": get_table_path("silver", "vote_history"),
         "partition_by": ["election_year", "source_vendor"],
         "description": "Per-person per-election vote events",
+    },
+    # Core (cross-source entity resolution)
+    "silver.entity_identifiers": {
+        "schema": SILVER_ENTITY_IDENTIFIERS,
+        "path": get_table_path("silver", "entity_identifiers"),
+        "partition_by": ["data_source"],
+        "description": "Cross-source entity identifier log for resolution",
+    },
+    # Agents
+    "silver.committees": {
+        "schema": SILVER_COMMITTEES,
+        "path": get_table_path("silver", "committees"),
+        "partition_by": ["jurisdiction_level", "jurisdiction_state"],
+        "description": "Committee records with lifecycle tracking",
+    },
+    "silver.organizations": {
+        "schema": SILVER_ORGANIZATIONS,
+        "path": get_table_path("silver", "organizations"),
+        "partition_by": ["jurisdiction_state"],
+        "description": "Organization records with industry classification",
+    },
+    # Facets
+    "silver.classifications": {
+        "schema": SILVER_CLASSIFICATIONS,
+        "path": get_table_path("silver", "classifications"),
+        "partition_by": ["jurisdiction_level", "jurisdiction_state"],
+        "description": "Agent classification facets (tax status, partisan alignment, etc.)",
+    },
+    "silver.roles": {
+        "schema": SILVER_ROLES,
+        "path": get_table_path("silver", "roles"),
+        "partition_by": ["jurisdiction_level", "jurisdiction_state"],
+        "description": "Agent role facets (treasurer, candidate, etc.)",
+    },
+    # Transactions
+    "silver.transactions": {
+        "schema": SILVER_TRANSACTIONS,
+        "path": get_table_path("silver", "transactions"),
+        "partition_by": ["jurisdiction_level", "jurisdiction_state", "year"],
+        "description": "Financial transactions between political actors",
+    },
+    "silver.obligations": {
+        "schema": SILVER_OBLIGATIONS,
+        "path": get_table_path("silver", "obligations"),
+        "partition_by": ["jurisdiction_state"],
+        "description": "Stateful obligation balance tracking (loans, payables)",
+    },
+    "silver.transaction_groups": {
+        "schema": SILVER_TRANSACTION_GROUPS,
+        "path": get_table_path("silver", "transaction_groups"),
+        "partition_by": ["year"],
+        "description": "Multi-leg transaction groups (JFC distributions, etc.)",
+    },
+    # Events
+    "silver.events": {
+        "schema": SILVER_EVENTS,
+        "path": get_table_path("silver", "events"),
+        "partition_by": ["event_type", "jurisdiction_state", "year"],
+        "description": "Unified event supertype (transactions, corporate, spatiotemporal, electoral)",
+    },
+    "silver.event_participants": {
+        "schema": SILVER_EVENT_PARTICIPANTS,
+        "path": get_table_path("silver", "event_participants"),
+        "partition_by": ["event_type"],
+        "description": "Event participant bridge (agent <-> event with role)",
+    },
+    "silver.events_corporate": {
+        "schema": SILVER_EVENTS_CORPORATE,
+        "path": get_table_path("silver", "events_corporate"),
+        "partition_by": [],
+        "description": "Corporate event details (merger, spinoff, etc.)",
+    },
+    "silver.events_spatiotemporal": {
+        "schema": SILVER_EVENTS_SPATIOTEMPORAL,
+        "path": get_table_path("silver", "events_spatiotemporal"),
+        "partition_by": ["affected_jurisdiction_state"],
+        "description": "Spatio-temporal event details (redistricting, annexation)",
+    },
+    "silver.events_electoral": {
+        "schema": SILVER_EVENTS_ELECTORAL,
+        "path": get_table_path("silver", "events_electoral"),
+        "partition_by": [],
+        "description": "Electoral event details (certification, recount)",
+    },
+    # Political structure
+    "silver.offices": {
+        "schema": SILVER_OFFICES,
+        "path": get_table_path("silver", "offices"),
+        "partition_by": ["jurisdiction_level", "jurisdiction_state"],
+        "description": "Political office identities (persist across redistricting)",
+    },
+    "silver.seats": {
+        "schema": SILVER_SEATS,
+        "path": get_table_path("silver", "seats"),
+        "partition_by": ["jurisdiction_state"],
+        "description": "Plan-specific geographic realizations of offices",
+    },
+    "silver.elections": {
+        "schema": SILVER_ELECTIONS,
+        "path": get_table_path("silver", "elections"),
+        "partition_by": ["year", "jurisdiction_state"],
+        "description": "Election events (date, jurisdiction, type)",
+    },
+    "silver.electoral_contests": {
+        "schema": SILVER_ELECTORAL_CONTESTS,
+        "path": get_table_path("silver", "electoral_contests"),
+        "partition_by": ["year", "jurisdiction_state"],
+        "description": "Contests linking offices to elections",
+    },
+    "silver.office_terms": {
+        "schema": SILVER_OFFICE_TERMS,
+        "path": get_table_path("silver", "office_terms"),
+        "partition_by": ["jurisdiction_state"],
+        "description": "Office term records (who holds what office when)",
+    },
+    # Boundary assignment
+    "silver.redistricting_plans": {
+        "schema": SILVER_REDISTRICTING_PLANS,
+        "path": get_table_path("silver", "redistricting_plans"),
+        "partition_by": ["state"],
+        "description": "Redistricting plans with effective date ranges",
+    },
+    "silver.address_boundary_periods": {
+        "schema": SILVER_ADDRESS_BOUNDARY_PERIODS,
+        "path": get_table_path("silver", "address_boundary_periods"),
+        "partition_by": ["state_abbreviation"],
+        "description": "Plan-keyed boundary assignments per address",
+    },
+    "silver.precinct_vtd_intersections": {
+        "schema": SILVER_PRECINCT_VTD_INTERSECTIONS,
+        "path": get_table_path("silver", "precinct_vtd_intersections"),
+        "partition_by": ["state", "election_cycle"],
+        "description": "Precinct-VTD area-weighted overlap for election result attribution",
     },
     # Gold
     "gold.enriched_addresses": {

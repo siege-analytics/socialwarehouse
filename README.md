@@ -1,6 +1,45 @@
 # The Social Warehouse
 
-This is a data warehouse and data lake system for social, civic and social analysis from [Siege Analytics](1).
+A multi-domain data warehouse and data lake system for social, civic, demographic, and economic analysis from [Siege Analytics](1). The US-default configuration ships with geography, civic, demographic, and economic domains keyed to US Census boundaries — but **the architecture is a template**, not a finished product, and the value comes from forking it for your own geography or domain combination.
+
+## Use this as a template
+
+SocialWarehouse is designed to be forked. The same architecture (Delta Lake medallion → PostGIS star-schema → Django ORM, with Dagster orchestration on top) works for any boundary-keyed multi-domain warehouse. Instance projects fork SW, rename the package, swap the geography (US → UK, EU, regional), and add or replace domains, inheriting the patterns from upstream.
+
+**📖 Start here:** [`docs/template/README.md`](docs/template/README.md) — overview of template usage end-to-end, decision orientation, what-you-inherit-vs-what-you-write.
+
+### Quick decision orientation
+
+| You want to | Read first |
+|---|---|
+| **Fork SW for your own warehouse** (UK, EU, regional, topic-specific) | [`docs/template/README.md`](docs/template/README.md) → [`docs/template/how-to-fork-and-rename.md`](docs/template/how-to-fork-and-rename.md) |
+| **Swap geography** (replace US Census with ONS / Eurostat / StatCan / etc.) | [`docs/template/how-to-swap-geography.md`](docs/template/how-to-swap-geography.md) |
+| **Add a new domain** (environmental, transit, real-estate, public-health, etc.) | [`docs/template/how-to-add-a-new-domain.md`](docs/template/how-to-add-a-new-domain.md) |
+| **Upgrade your fork from upstream SW** (absorb improvements without churning your fork) | [`docs/template/how-to-upgrade-from-upstream.md`](docs/template/how-to-upgrade-from-upstream.md) |
+| **Run SW locally to see what it does** (US-default) | [`docs/quickstart.md`](docs/quickstart.md) — `git clone` to seeded dev instance in under an hour |
+| **Add a new asset to an existing SW domain** (e.g. a new silver transformation) | [`docs/orchestration/how-to-add-asset-to-existing-domain.md`](docs/orchestration/how-to-add-asset-to-existing-domain.md) |
+| **Operate Dagster** (local dev, debug failures, deploy to prod) | [`docs/orchestration/how-to-operate.md`](docs/orchestration/how-to-operate.md) |
+| **Look up env vars, asset key conventions, factory signatures** | [`docs/orchestration/reference.md`](docs/orchestration/reference.md) |
+| **Understand the warehouse-first architecture** | [`docs/architecture.md`](docs/architecture.md) |
+| **Understand the template-readiness design decisions** (vintage polymorphization, boundary catalog, ingest patterns, init flow) | [`docs/designs/template-{b,c,d,e,f,g}-*.md`](docs/designs/) |
+
+### What you get out of the box
+
+- **Delta Lake layer** (`socialwarehouse/delta/`) — bronze/silver/gold medallion with reusable Spark + Sedona configuration, table-path helpers, and a Spark-based geographic enrichment library
+- **PostGIS serving tier** with a star-schema dimensional model (`DimGeography` SCD2, `FactACSEstimate`, `FactDecennialCount`, `FactElectionResult`, `FactPrecinctResult`, `FactRedistrictingPlan`)
+- **Boundary catalog** (`socialwarehouse/geo/`) — `Address` cache + `AddressBoundaryPeriod` temporal snapshots + F11 helpers + `CensusVintageConfig`, covering 13 US Census boundary types
+- **Dagster orchestration** (optional extra `[orchestration]`) — `ConfigurableResource`s, asset factories, demo `geo` asset graph end-to-end (bronze → silver → gold → PostGIS), one schedule + sensor example
+- **Django REST API** (DSTK replacement) — geocoding, reverse-geocoding, boundary lookup, proximity, intersections, civic-lookup
+- **Django web app frame** via [`geodjango_simple_template`](https://github.com/siege-analytics/geodjango_simple_template) git submodule
+- **Documented fork patterns** under [`docs/template/`](docs/template/) — five how-tos covering the full fork lifecycle (rename, swap-geography, add-domain, upgrade-from-upstream, plus the README overview)
+
+### What you bring
+
+- Your own geography catalog (US Census ships; other geographies follow [`how-to-swap-geography.md`](docs/template/how-to-swap-geography.md))
+- Your own domain-specific dim/fact models + asset graphs (geo demo ships; civic, demographic, economic land via [SW#277-279](https://github.com/siege-analytics/socialwarehouse/issues/277))
+- Your own seed_demo entries for the regions you care about
+- Instance-specific Django settings (the package supports a settings hierarchy; instance projects override `socialwarehouse.settings.prod`)
+- An upstream-sync cadence per [`how-to-upgrade-from-upstream.md`](docs/template/how-to-upgrade-from-upstream.md) so you absorb SW improvements without drifting
 
 Built with:
 
@@ -90,6 +129,27 @@ To compile the compose file snipits from the `docker/` sub-directory, we set the
 It is recommended that you create a generalized `.yml` file for each image you build. Then put additional configurations into a `.profile.yml` file. The `.profile.yml` files will always have precedence over service descriptions in plain `.yml` files. You might group related services into a profile, or add project-specific or environment-specific configurations, such as volumes, networks, or environment variables.
 
 For instance, we define image-building configurations in `docker/spark-build-image.yml` and define our integration of the image into the various services in `docker/spark.profile.yml`. You can see how we use one image in multiple services with different envrionment variables and volumes.
+
+## Dagster orchestration
+
+Warehouse pipeline orchestration lives in `socialwarehouse/orchestration/`
+and is an **optional extra** (`pip install -e ".[orchestration]"`).
+The full guide — install, local dev, debugging, production deployment,
+adding assets, instance-project extension — lives at
+[`docs/orchestration/`](docs/orchestration/README.md).
+
+Quick start:
+
+```bash
+pip install -e ".[orchestration]"
+export DJANGO_SETTINGS_MODULE=socialwarehouse.settings.dev
+export SW_WAREHOUSE_ROOT=file:///tmp/sw-warehouse
+dagster dev -m socialwarehouse.orchestration
+```
+
+Open http://localhost:3000 for the asset graph (bronze → silver → gold → PostGIS).
+Dagster is **separate from Celery** — Dagster orchestrates the warehouse
+pipeline; Celery handles web-app-triggered async tasks.
 
 ## References
 

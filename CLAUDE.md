@@ -55,10 +55,21 @@ socialwarehouse/
 │   ├── geo/              # 7 endpoints: geocode, reverse_geocode, boundaries, proximity, intersections
 │   └── warehouse/        # ViewSets: geographies, election-results, acs-estimates
 ├── delta/                # Delta Lake + Spark (Phase 4)
+├── orchestration/        # Dagster orchestration layer (SW#275; optional extra)
+│   ├── resources.py      # WarehouseConfig, SparkResource, PostGISResource
+│   ├── asset_factories.py # delta_table_asset, postgis_materialization_asset
+│   ├── assets/           # per-domain asset graphs (geo demo; civic/demographic/economic via SW#277-279)
+│   ├── schedules.py      # geo_nightly_schedule, geo_refresh_job
+│   ├── sensors.py        # bronze_addresses_arrival
+│   └── definitions.py    # canonical Definitions object (dagster dev -m socialwarehouse.orchestration)
 ├── settings/             # Django settings (base, dev, prod, test)
-├── celery_app.py
+├── celery_app.py         # Celery (web-app async); separate from Dagster (warehouse orchestration)
 └── urls.py
 ```
+
+**Orchestration docs:** see `docs/orchestration/` — README index,
+how-to-add-asset, how-to-operate, instance-project-guide, reference.
+Install with `pip install -e ".[orchestration]"`.
 
 ## Key Models
 

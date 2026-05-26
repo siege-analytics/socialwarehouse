@@ -52,6 +52,11 @@ INSTALLED_APPS = [
     # siege_utilities geographic models
     "siege_utilities.geo.django",
     # socialwarehouse apps
+    "socialwarehouse.core",
+    "socialwarehouse.agents",
+    "socialwarehouse.political",
+    "socialwarehouse.transactions",
+    "socialwarehouse.events",
     "socialwarehouse.geo",
     "socialwarehouse.warehouse",
     "socialwarehouse.demographic",

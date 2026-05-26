@@ -63,8 +63,43 @@ This means:
 - The web app is replaceable. The warehouse is not. A future Phoenix / Next.js / etc. UI would consume the same star schema; the data model doesn't move.
 - Web-app schema changes are downstream of warehouse schema changes, never the reverse.
 
+## App structure
+
+### Domain apps (ontology)
+
+| App | Purpose | Key models |
+|---|---|---|
+| `socialwarehouse.core` | Abstract mixins and UUID generation | `SourceAwareModel`, `IdentifiableModel` |
+| `socialwarehouse.agents` | Entity-resolved actors | `Committee`, `Organization`, `Classification`, `Role`, `Relationship*` (6 types) |
+| `socialwarehouse.political` | Political structure | `Office`, `Seat`, `Election`, `ElectoralContest`, `OfficeTerm` |
+| `socialwarehouse.transactions` | Financial flows | `Contribution`, `Expenditure`, `Transfer`, `Obligation`, `ObligationEvent`, `TransactionGroup` |
+| `socialwarehouse.events` | Unified event supertype | `Event`, `EventParticipant`, `CorporateEvent`, `SpatioTemporalEvent`, `ElectoralEvent` |
+| `socialwarehouse.geo` | Geography, boundaries, vintages | `Address`, `AddressBoundaryPeriod`, `PrecinctVTDIntersection`, `Vintage` (7 subtypes) |
+
+### Infrastructure apps
+
+| App | Purpose |
+|---|---|
+| `socialwarehouse.warehouse` | PostGIS star schema (dims + facts) |
+| `socialwarehouse.delta` | Delta Lake table definitions and config |
+| `socialwarehouse.demographic` | Census/ACS ingest pipelines |
+| `socialwarehouse.economic` | BLS QCEW / BEA / IRS SOI ingest |
+| `socialwarehouse.civic` | NCES school data ingest |
+
+### API surface
+
+| Prefix | App | Endpoints |
+|---|---|---|
+| `/api/geo/` | `socialwarehouse.api.geo` | civic_lookup, boundary queries |
+| `/api/warehouse/` | `socialwarehouse.api.warehouse` | dimension/fact read API |
+| `/api/agents/` | `socialwarehouse.api.agents` | person, committee, organization, classification, role |
+| `/api/political/` | `socialwarehouse.api.political` | office, seat, election, contest, term |
+| `/api/transactions/` | `socialwarehouse.api.transactions` | contribution, expenditure, transfer, obligation |
+| `/api/events/` | `socialwarehouse.api.events` | event (with participants + subtype details) |
+
 ## Cross-references
 
+- Initiative SW#284 (General Civic Ontology) — design doc: [`docs/designs/ontology.md`](designs/ontology.md).
 - Initiative SW#250 (US Civic/Electoral template) — first initiative to be explicitly constrained by this principle.
 - Sub-issue SW#251 design note (`sessions/260502-vital-channel/plans/think-sw251-person-model.md` in the workspace) — the canonical example of a warehouse-first design (v2 supersedes a v1 that was web-app-first).
 - Per-initiative design notes: [`docs/designs/`](designs/).

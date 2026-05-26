@@ -8,6 +8,8 @@ and standard dimensions for survey, variable, and time.
 from django.contrib.gis.db import models
 from django.core.validators import MaxValueValidator, MinValueValidator
 
+from socialwarehouse.core.mixins import IdentifiableModel, SourceAwareModel
+
 
 class DimGeography(models.Model):
     """Geography dimension with SCD Type 2 for boundary changes over time.
@@ -362,7 +364,7 @@ REGISTRATION_STATUS_CHOICES = [
 ]
 
 
-class DimPerson(models.Model):
+class DimPerson(SourceAwareModel, IdentifiableModel):
     """Person dimension — canonical voter record.
 
     Natural key: (vendor, vendor_voter_id). Same physical voter loaded
@@ -380,7 +382,22 @@ class DimPerson(models.Model):
     Vendor-divergent fields live in `*_extras` JSONFields. Promote a
     map key to a canonical column when a stable pattern emerges; see
     `docs/warehouse-schema-evolution.md`.
+
+    Inherits from SourceAwareModel (data_source, jurisdiction_level,
+    jurisdiction_state, source_record_id, ingested_at) and
+    IdentifiableModel (entity_uuid). entity_uuid is nullable during
+    the backfill transition period (#286 Step 1).
     """
+
+    # Override IdentifiableModel's entity_uuid to allow null during
+    # backfill transition. Tighten to NOT NULL after backfill completes.
+    entity_uuid = models.UUIDField(
+        unique=True,
+        editable=False,
+        null=True,
+        blank=True,
+        help_text="Stable UUID5 from (vendor, vendor_voter_id). Nullable during backfill transition.",
+    )
 
     vendor = models.CharField(max_length=16, choices=VENDOR_CHOICES, db_index=True)
     vendor_voter_id = models.CharField(max_length=128, db_index=True)

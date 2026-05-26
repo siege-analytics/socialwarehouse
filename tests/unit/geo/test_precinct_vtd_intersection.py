@@ -6,6 +6,12 @@ from django.test import TestCase
 
 from socialwarehouse.geo.models import PrecinctVTDIntersection
 
+try:
+    import pyspark  # noqa: F401
+    HAS_PYSPARK = True
+except ImportError:
+    HAS_PYSPARK = False
+
 
 @pytest.mark.django_db
 class TestPrecinctVTDIntersection(TestCase):
@@ -151,6 +157,7 @@ class TestPrecinctVTDIntersection(TestCase):
         assert dominant.first().vtd_geoid == "48001000100"
 
 
+@pytest.mark.skipif(not HAS_PYSPARK, reason="pyspark not installed")
 @pytest.mark.django_db
 class TestDeltaSchemaRegistration(TestCase):
     def test_redistricting_plans_registered(self):

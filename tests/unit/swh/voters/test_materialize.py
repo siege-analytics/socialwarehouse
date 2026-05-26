@@ -87,6 +87,38 @@ class TestVendorExtrasDispatch:
         assert out["registration_status"] == "not_registered"
         assert out["general_election_count"] == 0
 
+    def test_ontology_mixin_fields_populated(self):
+        from socialwarehouse.core.mixins import generate_entity_uuid5
+        from swh.voters.materialize import _silver_persons_to_dimperson_kwargs
+        out = _silver_persons_to_dimperson_kwargs(self._row())
+        assert out["data_source"] == "ts"
+        assert out["jurisdiction_level"] == "state"
+        assert out["jurisdiction_state"] == "TX"
+        assert out["source_record_id"] == "TS001"
+        assert out["entity_uuid"] == generate_entity_uuid5("ts", "TS001")
+
+    def test_entity_uuid_deterministic_across_calls(self):
+        from swh.voters.materialize import _silver_persons_to_dimperson_kwargs
+        out1 = _silver_persons_to_dimperson_kwargs(self._row())
+        out2 = _silver_persons_to_dimperson_kwargs(self._row())
+        assert out1["entity_uuid"] == out2["entity_uuid"]
+
+    def test_entity_uuid_differs_by_vendor(self):
+        from swh.voters.materialize import _silver_persons_to_dimperson_kwargs
+        out_ts = _silver_persons_to_dimperson_kwargs(self._row(vendor="ts"))
+        out_l2 = _silver_persons_to_dimperson_kwargs(self._row(vendor="l2"))
+        assert out_ts["entity_uuid"] != out_l2["entity_uuid"]
+
+    def test_data_source_falls_back_to_vendor(self):
+        from swh.voters.materialize import _silver_persons_to_dimperson_kwargs
+        out = _silver_persons_to_dimperson_kwargs(self._row())
+        assert out["data_source"] == "ts"
+
+    def test_data_source_prefers_explicit(self):
+        from swh.voters.materialize import _silver_persons_to_dimperson_kwargs
+        out = _silver_persons_to_dimperson_kwargs(self._row(data_source="targetsmart"))
+        assert out["data_source"] == "targetsmart"
+
 
 class TestChunking:
     def test_chunk_smaller_than_size(self):
@@ -246,3 +278,15 @@ class TestMaterializeEndToEnd:
         assert sv.general_election_count == 4
         assert sv.vote_frequency_category == "super_voter"
         assert sv.last_voted_at == date(2024, 11, 5)
+
+    def test_ts_materializer_writes_after_migration(self, spark):
+        """Named test per #286 Step 3: verify materializer populates mixin fields."""
+        from socialwarehouse.core.mixins import generate_entity_uuid5
+        from socialwarehouse.warehouse.models import DimPerson
+
+        ada = DimPerson.objects.get(vendor="ts", vendor_voter_id="TS001")
+        assert ada.entity_uuid == generate_entity_uuid5("ts", "TS001")
+        assert ada.data_source == "ts"
+        assert ada.jurisdiction_level == "state"
+        assert ada.jurisdiction_state == "TX"
+        assert ada.source_record_id == "TS001"

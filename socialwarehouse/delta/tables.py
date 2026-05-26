@@ -342,49 +342,55 @@ SILVER_ORGANIZATIONS = StructType([
 ])
 
 
-# ── Transaction schemas ──────────────────────────────────────────────────
+# ── Event schemas ────────────────────────────────────────────────────────
 
-SILVER_TRANSACTIONS = StructType([
-    StructField("transaction_uuid", StringType(), False),
-    StructField("transaction_type", StringType(), False),
-    StructField("from_agent_uuid", StringType(), False),
-    StructField("from_agent_type", StringType(), False),
-    StructField("to_agent_uuid", StringType(), False),
-    StructField("to_agent_type", StringType(), False),
-    StructField("amount", DecimalType(14, 2), False),
-    StructField("transaction_date", DateType(), False),
+SILVER_EVENTS = StructType([
+    StructField("event_uuid", StringType(), False),
+    StructField("event_type", StringType(), False),
+    StructField("event_date", DateType(), False),
     StructField("year", IntegerType(), False),
     StructField("description", StringType(), True),
-    StructField("data_source", StringType(), True),
     StructField("jurisdiction_level", StringType(), True),
     StructField("jurisdiction_state", StringType(), True),
+    StructField("data_source", StringType(), True),
     StructField("source_record_id", StringType(), True),
     StructField("ingested_at", TimestampType(), False),
 ])
 
-SILVER_OBLIGATIONS = StructType([
-    StructField("obligation_uuid", StringType(), False),
-    StructField("obligation_type", StringType(), False),
-    StructField("original_amount", DecimalType(14, 2), False),
-    StructField("current_balance", DecimalType(14, 2), False),
-    StructField("status", StringType(), False),
+SILVER_EVENT_PARTICIPANTS = StructType([
+    StructField("event_uuid", StringType(), False),
     StructField("agent_uuid", StringType(), False),
     StructField("agent_type", StringType(), False),
-    StructField("counterparty_uuid", StringType(), False),
-    StructField("counterparty_type", StringType(), False),
+    StructField("role_in_event", StringType(), False),
+    StructField("event_type", StringType(), True),
     StructField("data_source", StringType(), True),
-    StructField("jurisdiction_level", StringType(), True),
-    StructField("jurisdiction_state", StringType(), True),
-    StructField("source_record_id", StringType(), True),
     StructField("ingested_at", TimestampType(), False),
 ])
 
-SILVER_TRANSACTION_GROUPS = StructType([
-    StructField("group_uuid", StringType(), False),
-    StructField("group_type", StringType(), False),
-    StructField("description", StringType(), True),
-    StructField("transaction_uuids", StringType(), True),
-    StructField("year", IntegerType(), True),
+SILVER_EVENTS_CORPORATE = StructType([
+    StructField("event_uuid", StringType(), False),
+    StructField("corporate_event_type", StringType(), False),
+    StructField("predecessor_uuid", StringType(), True),
+    StructField("successor_uuid", StringType(), True),
+    StructField("relationship_uuid", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_EVENTS_SPATIOTEMPORAL = StructType([
+    StructField("event_uuid", StringType(), False),
+    StructField("spatiotemporal_event_type", StringType(), False),
+    StructField("redistricting_plan_id", StringType(), True),
+    StructField("affected_boundary_type", StringType(), True),
+    StructField("affected_jurisdiction_state", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_EVENTS_ELECTORAL = StructType([
+    StructField("event_uuid", StringType(), False),
+    StructField("electoral_event_type", StringType(), False),
+    StructField("contest_uuid", StringType(), True),
+    StructField("is_certified", BooleanType(), False),
+    StructField("is_recount", BooleanType(), False),
     StructField("ingested_at", TimestampType(), False),
 ])
 
@@ -568,6 +574,37 @@ TABLES = {
         "path": get_table_path("silver", "transaction_groups"),
         "partition_by": ["year"],
         "description": "Multi-leg transaction groups (JFC distributions, etc.)",
+    },
+    # Events
+    "silver.events": {
+        "schema": SILVER_EVENTS,
+        "path": get_table_path("silver", "events"),
+        "partition_by": ["event_type", "jurisdiction_state", "year"],
+        "description": "Unified event supertype (transactions, corporate, spatiotemporal, electoral)",
+    },
+    "silver.event_participants": {
+        "schema": SILVER_EVENT_PARTICIPANTS,
+        "path": get_table_path("silver", "event_participants"),
+        "partition_by": ["event_type"],
+        "description": "Event participant bridge (agent <-> event with role)",
+    },
+    "silver.events_corporate": {
+        "schema": SILVER_EVENTS_CORPORATE,
+        "path": get_table_path("silver", "events_corporate"),
+        "partition_by": [],
+        "description": "Corporate event details (merger, spinoff, etc.)",
+    },
+    "silver.events_spatiotemporal": {
+        "schema": SILVER_EVENTS_SPATIOTEMPORAL,
+        "path": get_table_path("silver", "events_spatiotemporal"),
+        "partition_by": ["affected_jurisdiction_state"],
+        "description": "Spatio-temporal event details (redistricting, annexation)",
+    },
+    "silver.events_electoral": {
+        "schema": SILVER_EVENTS_ELECTORAL,
+        "path": get_table_path("silver", "events_electoral"),
+        "partition_by": [],
+        "description": "Electoral event details (certification, recount)",
     },
     # Political structure
     "silver.offices": {

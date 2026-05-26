@@ -452,6 +452,53 @@ SILVER_OFFICE_TERMS = StructType([
     StructField("ingested_at", TimestampType(), False),
 ])
 
+
+# ── Boundary assignment schemas ──────────────────────────────────────────
+
+SILVER_REDISTRICTING_PLANS = StructType([
+    StructField("plan_uuid", StringType(), False),
+    StructField("state", StringType(), False),
+    StructField("chamber", StringType(), False),
+    StructField("plan_name", StringType(), False),
+    StructField("plan_type", StringType(), False),
+    StructField("effective_from", DateType(), False),
+    StructField("effective_to", DateType(), True),
+    StructField("source", StringType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_ADDRESS_BOUNDARY_PERIODS = StructType([
+    StructField("address_id", LongType(), False),
+    StructField("vintage_decade", IntegerType(), False),
+    StructField("redistricting_plan_id", IntegerType(), True),
+    StructField("context_date", DateType(), True),
+    StructField("state_geoid", StringType(), True),
+    StructField("county_geoid", StringType(), True),
+    StructField("tract_geoid", StringType(), True),
+    StructField("block_group_geoid", StringType(), True),
+    StructField("block_geoid", StringType(), True),
+    StructField("vtd_geoid", StringType(), True),
+    StructField("cd_geoid", StringType(), True),
+    StructField("sldl_geoid", StringType(), True),
+    StructField("sldu_geoid", StringType(), True),
+    StructField("assignment_method", StringType(), True),
+    StructField("assigned_at", TimestampType(), True),
+    StructField("state_abbreviation", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_PRECINCT_VTD_INTERSECTIONS = StructType([
+    StructField("precinct_geoid", StringType(), False),
+    StructField("vtd_geoid", StringType(), False),
+    StructField("election_cycle", IntegerType(), False),
+    StructField("overlap_area_sqm", DoubleType(), True),
+    StructField("overlap_fraction", DoubleType(), True),
+    StructField("state", StringType(), False),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+
 # ── Table registry ───────────────────────────────────────────────────────
 
 TABLES = {
@@ -636,6 +683,25 @@ TABLES = {
         "path": get_table_path("silver", "office_terms"),
         "partition_by": ["jurisdiction_state"],
         "description": "Office term records (who holds what office when)",
+    },
+    # Boundary assignment
+    "silver.redistricting_plans": {
+        "schema": SILVER_REDISTRICTING_PLANS,
+        "path": get_table_path("silver", "redistricting_plans"),
+        "partition_by": ["state"],
+        "description": "Redistricting plans with effective date ranges",
+    },
+    "silver.address_boundary_periods": {
+        "schema": SILVER_ADDRESS_BOUNDARY_PERIODS,
+        "path": get_table_path("silver", "address_boundary_periods"),
+        "partition_by": ["state_abbreviation"],
+        "description": "Plan-keyed boundary assignments per address",
+    },
+    "silver.precinct_vtd_intersections": {
+        "schema": SILVER_PRECINCT_VTD_INTERSECTIONS,
+        "path": get_table_path("silver", "precinct_vtd_intersections"),
+        "partition_by": ["state", "election_cycle"],
+        "description": "Precinct-VTD area-weighted overlap for election result attribution",
     },
     # Gold
     "gold.enriched_addresses": {

@@ -2,6 +2,7 @@ from .address import Address, United_States_Address
 from .address_boundary import AddressBoundaryPeriod
 from .intersections import (
     CountyCongressionalDistrictIntersection,
+    PrecinctVTDIntersection,
     VTDCongressionalDistrictIntersection,
 )
 from .political import (
@@ -26,6 +27,7 @@ __all__ = [
     "United_States_Address",
     "AddressBoundaryPeriod",
     "CountyCongressionalDistrictIntersection",
+    "PrecinctVTDIntersection",
     "VTDCongressionalDistrictIntersection",
     "PoliticalState",
     "PoliticalCongressionalDistrict",

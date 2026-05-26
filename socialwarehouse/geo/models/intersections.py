@@ -6,9 +6,12 @@ Stores intersection geometries and overlap percentages for fast queries
 without runtime spatial joins.
 
 Clean break: siege_geo FKs only (no legacy TIGER FKs).
+PrecinctVTDIntersection uses GEOID strings (no FKs) because precinct
+boundaries are election-cycle-specific and not in siege_utilities yet.
 """
 
 from django.contrib.gis.db import models
+from django.db import models as django_models
 
 
 class CountyCongressionalDistrictIntersection(models.Model):
@@ -124,3 +127,58 @@ class VTDCongressionalDistrictIntersection(models.Model):
 
     def __str__(self):
         return f"VTD {self.siege_vtd_id} ∩ CD {self.siege_cd_id} ({self.pct_of_vtd:.1f}%)"
+
+
+class PrecinctVTDIntersection(django_models.Model):
+    """Area-weighted overlap between election precincts and Census VTDs.
+
+    Precincts change every election cycle; VTDs are frozen at decennial
+    Census boundaries. This table enables joining precinct-reported
+    election results to Census-organized demographics via VTD/tract.
+    """
+
+    precinct_geoid = django_models.CharField(max_length=20, db_index=True)
+    vtd_geoid = django_models.CharField(max_length=11, db_index=True)
+    election_cycle = django_models.PositiveSmallIntegerField(db_index=True)
+    state = django_models.CharField(max_length=2, db_index=True)
+
+    overlap_area_sqm = django_models.BigIntegerField(
+        null=True, blank=True,
+        help_text="Area of intersection in square meters",
+    )
+    overlap_fraction = django_models.DecimalField(
+        max_digits=5, decimal_places=4,
+        null=True, blank=True,
+        help_text="Fraction of precinct area that overlaps with VTD (0.0-1.0)",
+    )
+
+    is_dominant = django_models.BooleanField(
+        default=False, db_index=True,
+        help_text="True if >50% of precinct area is in this VTD",
+    )
+    computed_at = django_models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "sw_geo_intersection_precinct_vtd"
+        verbose_name = "Precinct-VTD Intersection"
+        verbose_name_plural = "Precinct-VTD Intersections"
+        unique_together = [["precinct_geoid", "vtd_geoid", "election_cycle"]]
+        indexes = [
+            django_models.Index(
+                fields=["election_cycle", "precinct_geoid"],
+                name="idx_pvtd_cycle_precinct",
+            ),
+            django_models.Index(
+                fields=["election_cycle", "vtd_geoid"],
+                name="idx_pvtd_cycle_vtd",
+            ),
+            django_models.Index(
+                fields=["state", "election_cycle"],
+                name="idx_pvtd_state_cycle",
+            ),
+        ]
+        ordering = ["precinct_geoid", "-overlap_fraction"]
+
+    def __str__(self):
+        frac = f"{self.overlap_fraction:.1%}" if self.overlap_fraction else "?"
+        return f"Precinct {self.precinct_geoid} ∩ VTD {self.vtd_geoid} ({frac})"

@@ -260,6 +260,22 @@ GOLD_ENRICHED_ADDRESSES = StructType([
 ])
 
 
+# ── Core schemas (cross-source entity resolution) ───────────────────────
+
+SILVER_ENTITY_IDENTIFIERS = StructType([
+    StructField("entity_uuid", StringType(), False),
+    StructField("identifier_type", StringType(), False),
+    StructField("identifier_value", StringType(), False),
+    StructField("data_source", StringType(), False),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("normalizer_version", IntegerType(), False),
+    StructField("valid_from", TimestampType(), False),
+    StructField("valid_to", TimestampType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+
 # ── Table registry ───────────────────────────────────────────────────────
 
 TABLES = {
@@ -330,6 +346,13 @@ TABLES = {
         "path": get_table_path("silver", "vote_history"),
         "partition_by": ["election_year", "source_vendor"],
         "description": "Per-person per-election vote events",
+    },
+    # Core (cross-source entity resolution)
+    "silver.entity_identifiers": {
+        "schema": SILVER_ENTITY_IDENTIFIERS,
+        "path": get_table_path("silver", "entity_identifiers"),
+        "partition_by": ["data_source"],
+        "description": "Cross-source entity identifier log for resolution",
     },
     # Gold
     "gold.enriched_addresses": {

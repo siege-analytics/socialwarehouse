@@ -21,6 +21,7 @@ class OfficeSerializer(serializers.ModelSerializer):
 
 class SeatSerializer(serializers.ModelSerializer):
     office_name = serializers.CharField(source="office.name", read_only=True)
+    is_current = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Seat
@@ -59,6 +60,7 @@ class ElectoralContestSerializer(serializers.ModelSerializer):
 
 class OfficeTermSerializer(serializers.ModelSerializer):
     office_name = serializers.CharField(source="office.name", read_only=True)
+    is_current = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = OfficeTerm

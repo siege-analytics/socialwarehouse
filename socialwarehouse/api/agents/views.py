@@ -25,7 +25,16 @@ class PersonViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["first_name", "last_name", "entity_uuid"]
     ordering = ["last_name", "first_name"]
-    filterset_fields = ["jurisdiction_state", "data_source"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        state = self.request.query_params.get("jurisdiction_state")
+        if state:
+            qs = qs.filter(jurisdiction_state=state)
+        source = self.request.query_params.get("data_source")
+        if source:
+            qs = qs.filter(data_source=source)
+        return qs
 
 
 class CommitteeViewSet(viewsets.ReadOnlyModelViewSet):

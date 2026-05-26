@@ -5,6 +5,8 @@ from decimal import Decimal
 import pytest
 from django.test import TestCase
 
+from socialwarehouse.core.mixins import generate_entity_uuid5
+
 from socialwarehouse.api.agents.serializers import (
     ClassificationSerializer,
     CommitteeSerializer,
@@ -33,6 +35,8 @@ class TestAgentSerializers(TestCase):
         c = Committee.objects.create(
             name="Test PAC",
             committee_type="pac",
+            source_system_id="C00123456",
+            entity_uuid=generate_entity_uuid5("Test PAC", "TX"),
             data_source="fec",
             jurisdiction_state="TX",
         )
@@ -45,7 +49,9 @@ class TestAgentSerializers(TestCase):
         from socialwarehouse.agents.models import Organization
         o = Organization.objects.create(
             name="Acme Corp",
-            organization_type="corporation",
+            entity_uuid=generate_entity_uuid5("Acme Corp", "TX"),
+            industry_code="541511",
+            industry_system="naics",
             data_source="sec",
         )
         s = OrganizationSerializer(o)
@@ -57,14 +63,14 @@ class TestAgentSerializers(TestCase):
         cl = Classification.objects.create(
             agent_uuid=uuid.uuid4(),
             agent_type="committee",
-            classification_type="party_affiliation",
-            classification_value="democratic",
+            classification_type="tax_status",
+            value="501(c)(4)",
             effective_from=date(2024, 1, 1),
             data_source="fec",
         )
         s = ClassificationSerializer(cl)
-        assert s.data["classification_type"] == "party_affiliation"
-        assert s.data["classification_value"] == "democratic"
+        assert s.data["classification_type"] == "tax_status"
+        assert s.data["value"] == "501(c)(4)"
 
     def test_role_serializer_fields(self):
         from socialwarehouse.agents.models import Role
@@ -72,9 +78,8 @@ class TestAgentSerializers(TestCase):
             agent_uuid=uuid.uuid4(),
             agent_type="person",
             role_type="treasurer",
-            role_context="committee",
-            context_entity_uuid=uuid.uuid4(),
-            context_entity_type="committee",
+            counterparty_uuid=uuid.uuid4(),
+            counterparty_type="committee",
             effective_from=date(2024, 1, 1),
             data_source="fec",
         )
@@ -88,14 +93,15 @@ class TestPoliticalSerializers(TestCase):
         from socialwarehouse.political.models import Office
         o = Office.objects.create(
             name="US House TX-07",
+            entity_uuid=generate_entity_uuid5("US House", "TX", "07"),
             jurisdiction_level="federal",
             jurisdiction_state="TX",
-            chamber="us_house",
+            chamber="house",
             district_number="07",
         )
         s = OfficeSerializer(o)
         assert s.data["name"] == "US House TX-07"
-        assert s.data["chamber"] == "us_house"
+        assert s.data["chamber"] == "house"
 
     def test_election_serializer_fields(self):
         from socialwarehouse.political.models import Election
@@ -113,20 +119,21 @@ class TestPoliticalSerializers(TestCase):
         from socialwarehouse.political.models import Office, OfficeTerm
         office = Office.objects.create(
             name="US House TX-07",
+            entity_uuid=generate_entity_uuid5("US House", "TX", "07b"),
             jurisdiction_level="federal",
             jurisdiction_state="TX",
-            chamber="us_house",
+            chamber="house",
         )
         term = OfficeTerm.objects.create(
             office=office,
             person_uuid=uuid.uuid4(),
             start_date=date(2023, 1, 3),
-            term_type="full",
+            term_type="elected",
             data_source="congress",
         )
         s = OfficeTermSerializer(term)
         assert s.data["office_name"] == "US House TX-07"
-        assert s.data["term_type"] == "full"
+        assert s.data["term_type"] == "elected"
 
 
 @pytest.mark.django_db
@@ -150,10 +157,10 @@ class TestTransactionSerializers(TestCase):
     def test_obligation_serializer_fields(self):
         from socialwarehouse.transactions.models import Obligation
         o = Obligation.objects.create(
-            obligation_type="loan_received",
+            obligation_type="loan",
             original_amount=Decimal("10000.00"),
             current_balance=Decimal("10000.00"),
-            status="outstanding",
+            status="active",
             agent_uuid=uuid.uuid4(),
             agent_type="committee",
             counterparty_uuid=uuid.uuid4(),
@@ -161,8 +168,8 @@ class TestTransactionSerializers(TestCase):
             data_source="fec",
         )
         s = ObligationSerializer(o)
-        assert s.data["obligation_type"] == "loan_received"
-        assert s.data["status"] == "outstanding"
+        assert s.data["obligation_type"] == "loan"
+        assert s.data["status"] == "active"
 
 
 @pytest.mark.django_db

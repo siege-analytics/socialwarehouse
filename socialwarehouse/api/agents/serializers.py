@@ -24,8 +24,7 @@ class CommitteeSerializer(serializers.ModelSerializer):
         model = Committee
         fields = [
             "id", "entity_uuid", "name", "committee_type",
-            "designation", "filing_frequency",
-            "treasurer_uuid", "connected_org_uuid",
+            "source_system_id", "formation_date", "termination_date",
             "data_source", "jurisdiction_state", "source_record_id",
         ]
 
@@ -34,8 +33,8 @@ class OrganizationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Organization
         fields = [
-            "id", "entity_uuid", "name", "organization_type",
-            "industry_code",
+            "id", "entity_uuid", "name",
+            "industry_code", "industry_system",
             "data_source", "jurisdiction_state", "source_record_id",
         ]
 
@@ -44,8 +43,8 @@ class ClassificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Classification
         fields = [
-            "id", "agent_uuid", "agent_type",
-            "classification_type", "classification_value",
+            "id", "classification_uuid", "agent_uuid", "agent_type",
+            "classification_type", "value",
             "effective_from", "effective_to",
             "data_source", "jurisdiction_state",
         ]
@@ -55,9 +54,8 @@ class RoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Role
         fields = [
-            "id", "agent_uuid", "agent_type",
-            "role_type", "role_context",
-            "context_entity_uuid", "context_entity_type",
+            "id", "role_uuid", "agent_uuid", "agent_type",
+            "role_type", "counterparty_uuid", "counterparty_type",
             "effective_from", "effective_to",
             "data_source", "jurisdiction_state",
         ]

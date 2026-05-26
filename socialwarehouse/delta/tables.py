@@ -281,6 +281,38 @@ SILVER_ENTITY_IDENTIFIERS = StructType([
 ])
 
 
+# ── Facet schemas (Classification, Role) ─────────────────────────────────
+
+SILVER_CLASSIFICATIONS = StructType([
+    StructField("classification_uuid", StringType(), False),
+    StructField("agent_uuid", StringType(), False),
+    StructField("agent_type", StringType(), False),
+    StructField("classification_type", StringType(), False),
+    StructField("value", StringType(), False),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("effective_from", DateType(), True),
+    StructField("effective_to", DateType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_ROLES = StructType([
+    StructField("role_uuid", StringType(), False),
+    StructField("agent_uuid", StringType(), False),
+    StructField("agent_type", StringType(), False),
+    StructField("role_type", StringType(), False),
+    StructField("counterparty_uuid", StringType(), True),
+    StructField("counterparty_type", StringType(), True),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("effective_from", DateType(), True),
+    StructField("effective_to", DateType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+
 # ── Agent schemas (Committee, Organization) ─────────────────────────────
 
 SILVER_COMMITTEES = StructType([
@@ -400,6 +432,19 @@ TABLES = {
         "path": get_table_path("silver", "organizations"),
         "partition_by": ["jurisdiction_state"],
         "description": "Organization records with industry classification",
+    },
+    # Facets
+    "silver.classifications": {
+        "schema": SILVER_CLASSIFICATIONS,
+        "path": get_table_path("silver", "classifications"),
+        "partition_by": ["jurisdiction_level", "jurisdiction_state"],
+        "description": "Agent classification facets (tax status, partisan alignment, etc.)",
+    },
+    "silver.roles": {
+        "schema": SILVER_ROLES,
+        "path": get_table_path("silver", "roles"),
+        "partition_by": ["jurisdiction_level", "jurisdiction_state"],
+        "description": "Agent role facets (treasurer, candidate, etc.)",
     },
     # Gold
     "gold.enriched_addresses": {

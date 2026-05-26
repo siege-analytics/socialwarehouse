@@ -200,6 +200,11 @@ SILVER_PERSONS = StructType([
     StructField("vote_frequency_category", StringType(), True),
     # Evolvable vendor extension bag (see schema-evolution doc)
     StructField("vendor_extras", MapType(StringType(), StringType()), True),
+    # Ontology mixin fields (A-1 / #286)
+    StructField("entity_uuid", StringType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("source_record_id", StringType(), True),
     # Provenance
     StructField("source_file", StringType(), True),
     StructField("ingested_at", TimestampType(), False),

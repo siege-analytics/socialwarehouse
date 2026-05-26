@@ -20,6 +20,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Iterable, Iterator
 
+from socialwarehouse.core.mixins import generate_entity_uuid5
+
 if TYPE_CHECKING:  # pragma: no cover
     from pyspark.sql import SparkSession
 
@@ -77,9 +79,18 @@ def _silver_persons_to_dimperson_kwargs(row) -> dict:
         extras_payload = {f: {} for f in _VENDOR_EXTRAS_FIELD.values()}
         extras_payload[extras_field] = dict(extras)
 
+    vendor_voter_id = d.get("vendor_voter_id")
     kwargs = {
         "vendor": vendor,
-        "vendor_voter_id": d.get("vendor_voter_id"),
+        "vendor_voter_id": vendor_voter_id,
+        # SourceAwareModel fields
+        "data_source": d.get("data_source") or vendor or "",
+        "jurisdiction_level": d.get("jurisdiction_level") or "state",
+        "jurisdiction_state": d.get("jurisdiction_state") or d.get("registration_state") or "",
+        "source_record_id": d.get("source_record_id") or vendor_voter_id or "",
+        "ingested_at": d.get("ingested_at"),
+        # IdentifiableModel field
+        "entity_uuid": generate_entity_uuid5(vendor or "", vendor_voter_id or ""),
         "first_name": d.get("first_name") or "",
         "middle_name": d.get("middle_name") or "",
         "last_name": d.get("last_name") or "",
@@ -148,6 +159,8 @@ def _build_id_lookup(person_keys: set[str]) -> dict[tuple[str, str], int]:
 # Update field lists. Exclude id and created_at; everything else is
 # eligible for overwrite on conflict.
 _DIMPERSON_UPDATE_FIELDS = [
+    "data_source", "jurisdiction_level", "jurisdiction_state",
+    "source_record_id", "ingested_at", "entity_uuid",
     "first_name", "middle_name", "last_name", "name_suffix", "dob", "gender",
     "ethnicity", "language",
     "registration_status", "registration_state", "registration_date",

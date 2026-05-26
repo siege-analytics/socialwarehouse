@@ -342,6 +342,64 @@ SILVER_ORGANIZATIONS = StructType([
 ])
 
 
+# ── Political structure schemas ──────────────────────────────────────────
+
+SILVER_OFFICES = StructType([
+    StructField("office_uuid", StringType(), False),
+    StructField("name", StringType(), False),
+    StructField("jurisdiction_level", StringType(), False),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("chamber", StringType(), True),
+    StructField("district_number", StringType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_SEATS = StructType([
+    StructField("seat_uuid", StringType(), False),
+    StructField("office_uuid", StringType(), False),
+    StructField("redistricting_plan_id", StringType(), True),
+    StructField("effective_from", DateType(), True),
+    StructField("effective_to", DateType(), True),
+    StructField("boundary_geoid", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_ELECTIONS = StructType([
+    StructField("election_uuid", StringType(), False),
+    StructField("election_date", DateType(), False),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("election_type", StringType(), False),
+    StructField("year", IntegerType(), False),
+    StructField("data_source", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_ELECTORAL_CONTESTS = StructType([
+    StructField("contest_uuid", StringType(), False),
+    StructField("election_uuid", StringType(), False),
+    StructField("office_uuid", StringType(), False),
+    StructField("seat_uuid", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("year", IntegerType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_OFFICE_TERMS = StructType([
+    StructField("term_uuid", StringType(), False),
+    StructField("office_uuid", StringType(), False),
+    StructField("person_uuid", StringType(), False),
+    StructField("start_date", DateType(), False),
+    StructField("end_date", DateType(), True),
+    StructField("term_type", StringType(), False),
+    StructField("congress_number", IntegerType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+
 # ── Table registry ───────────────────────────────────────────────────────
 
 TABLES = {
@@ -445,6 +503,37 @@ TABLES = {
         "path": get_table_path("silver", "roles"),
         "partition_by": ["jurisdiction_level", "jurisdiction_state"],
         "description": "Agent role facets (treasurer, candidate, etc.)",
+    },
+    # Political structure
+    "silver.offices": {
+        "schema": SILVER_OFFICES,
+        "path": get_table_path("silver", "offices"),
+        "partition_by": ["jurisdiction_level", "jurisdiction_state"],
+        "description": "Political office identities (persist across redistricting)",
+    },
+    "silver.seats": {
+        "schema": SILVER_SEATS,
+        "path": get_table_path("silver", "seats"),
+        "partition_by": ["jurisdiction_state"],
+        "description": "Plan-specific geographic realizations of offices",
+    },
+    "silver.elections": {
+        "schema": SILVER_ELECTIONS,
+        "path": get_table_path("silver", "elections"),
+        "partition_by": ["year", "jurisdiction_state"],
+        "description": "Election events (date, jurisdiction, type)",
+    },
+    "silver.electoral_contests": {
+        "schema": SILVER_ELECTORAL_CONTESTS,
+        "path": get_table_path("silver", "electoral_contests"),
+        "partition_by": ["year", "jurisdiction_state"],
+        "description": "Contests linking offices to elections",
+    },
+    "silver.office_terms": {
+        "schema": SILVER_OFFICE_TERMS,
+        "path": get_table_path("silver", "office_terms"),
+        "partition_by": ["jurisdiction_state"],
+        "description": "Office term records (who holds what office when)",
     },
     # Gold
     "gold.enriched_addresses": {

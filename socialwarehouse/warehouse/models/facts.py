@@ -175,6 +175,13 @@ class FactElectionResult(models.Model):
 
     geography = models.ForeignKey(DimGeography, on_delete=models.CASCADE, related_name="election_results")
     election_date = models.ForeignKey(DimTime, on_delete=models.CASCADE, related_name="election_results")
+    electoral_contest = models.ForeignKey(
+        "sw_political.ElectoralContest",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="election_results",
+    )
     office = models.CharField(max_length=20, choices=OFFICE_CHOICES)
     party = models.CharField(max_length=50)
     candidate_name = models.CharField(max_length=255, blank=True, default="")
@@ -193,6 +200,7 @@ class FactElectionResult(models.Model):
         indexes = [
             models.Index(fields=["geography", "election_date", "office"]),
             models.Index(fields=["office", "party"]),
+            models.Index(fields=["electoral_contest"], name="idx_fer_contest"),
         ]
 
     def __str__(self):
@@ -215,6 +223,13 @@ class FactPrecinctResult(models.Model):
 
     geography = models.ForeignKey(DimGeography, on_delete=models.CASCADE, related_name="precinct_results")
     election_date = models.ForeignKey(DimTime, on_delete=models.CASCADE, related_name="precinct_results")
+    electoral_contest = models.ForeignKey(
+        "sw_political.ElectoralContest",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="precinct_results",
+    )
     office = models.CharField(max_length=30, choices=OFFICE_CHOICES)
     party = models.CharField(max_length=50)
     candidate_name = models.CharField(max_length=255, blank=True, default="")
@@ -233,6 +248,7 @@ class FactPrecinctResult(models.Model):
         indexes = [
             models.Index(fields=["geography", "election_date", "office"]),
             models.Index(fields=["office", "party"]),
+            models.Index(fields=["electoral_contest"], name="idx_fpr_contest"),
         ]
 
     def __str__(self):

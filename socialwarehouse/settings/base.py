@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "socialwarehouse.core",
     "socialwarehouse.agents",
     "socialwarehouse.political",
+    "socialwarehouse.transactions",
     "socialwarehouse.geo",
     "socialwarehouse.warehouse",
     "socialwarehouse.demographic",

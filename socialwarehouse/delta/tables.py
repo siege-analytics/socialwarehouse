@@ -342,6 +342,53 @@ SILVER_ORGANIZATIONS = StructType([
 ])
 
 
+# ── Transaction schemas ──────────────────────────────────────────────────
+
+SILVER_TRANSACTIONS = StructType([
+    StructField("transaction_uuid", StringType(), False),
+    StructField("transaction_type", StringType(), False),
+    StructField("from_agent_uuid", StringType(), False),
+    StructField("from_agent_type", StringType(), False),
+    StructField("to_agent_uuid", StringType(), False),
+    StructField("to_agent_type", StringType(), False),
+    StructField("amount", DecimalType(14, 2), False),
+    StructField("transaction_date", DateType(), False),
+    StructField("year", IntegerType(), False),
+    StructField("description", StringType(), True),
+    StructField("data_source", StringType(), True),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("source_record_id", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_OBLIGATIONS = StructType([
+    StructField("obligation_uuid", StringType(), False),
+    StructField("obligation_type", StringType(), False),
+    StructField("original_amount", DecimalType(14, 2), False),
+    StructField("current_balance", DecimalType(14, 2), False),
+    StructField("status", StringType(), False),
+    StructField("agent_uuid", StringType(), False),
+    StructField("agent_type", StringType(), False),
+    StructField("counterparty_uuid", StringType(), False),
+    StructField("counterparty_type", StringType(), False),
+    StructField("data_source", StringType(), True),
+    StructField("jurisdiction_level", StringType(), True),
+    StructField("jurisdiction_state", StringType(), True),
+    StructField("source_record_id", StringType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+SILVER_TRANSACTION_GROUPS = StructType([
+    StructField("group_uuid", StringType(), False),
+    StructField("group_type", StringType(), False),
+    StructField("description", StringType(), True),
+    StructField("transaction_uuids", StringType(), True),
+    StructField("year", IntegerType(), True),
+    StructField("ingested_at", TimestampType(), False),
+])
+
+
 # ── Political structure schemas ──────────────────────────────────────────
 
 SILVER_OFFICES = StructType([
@@ -398,7 +445,6 @@ SILVER_OFFICE_TERMS = StructType([
     StructField("data_source", StringType(), True),
     StructField("ingested_at", TimestampType(), False),
 ])
-
 
 # ── Table registry ───────────────────────────────────────────────────────
 
@@ -503,6 +549,25 @@ TABLES = {
         "path": get_table_path("silver", "roles"),
         "partition_by": ["jurisdiction_level", "jurisdiction_state"],
         "description": "Agent role facets (treasurer, candidate, etc.)",
+    },
+    # Transactions
+    "silver.transactions": {
+        "schema": SILVER_TRANSACTIONS,
+        "path": get_table_path("silver", "transactions"),
+        "partition_by": ["jurisdiction_level", "jurisdiction_state", "year"],
+        "description": "Financial transactions between political actors",
+    },
+    "silver.obligations": {
+        "schema": SILVER_OBLIGATIONS,
+        "path": get_table_path("silver", "obligations"),
+        "partition_by": ["jurisdiction_state"],
+        "description": "Stateful obligation balance tracking (loans, payables)",
+    },
+    "silver.transaction_groups": {
+        "schema": SILVER_TRANSACTION_GROUPS,
+        "path": get_table_path("silver", "transaction_groups"),
+        "partition_by": ["year"],
+        "description": "Multi-leg transaction groups (JFC distributions, etc.)",
     },
     # Political structure
     "silver.offices": {

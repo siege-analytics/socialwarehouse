@@ -153,6 +153,7 @@ You've got:
 - **Add an ingest path for a data source we don't ship.** Use D/E/F's existing patterns as the template — each domain's `services/` and `management/commands/` directories show the shape.
 - **Bring your own boundary types.** SU's `geo.django.models.*` is the upstream home for new boundary models; SW adds the `{type}_geoid` cache field on Address + ABP.
 - **Cron a TIGER vintage refresh.** SU ships `siege_utilities.geo.providers.CensusTIGERProvider.list_available_vintages()` and `siege_utilities.geo.census.tiger_state.check_for_updates(state_file)` for "is a new TIGER vintage published?" checks. Wire those into your scheduler; on a "yes," call `CensusTIGERProvider.get_boundary(...)` for the levels you want. (SW used to ship `scripts/fetch_census_tiger.py` for this; deleted in favor of the SU helpers.)
+- **Plan for production scale.** When your database outgrows the single-node dev setup, see [`docs/production-operations.md`](production-operations.md) for the operational decisions you'll need to make — HA topology, backup, connection pooling, partitioning, and more.
 
 ## Fork-and-rename ergonomics
 

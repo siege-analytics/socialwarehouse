@@ -38,6 +38,7 @@ override by constructing a different value and passing to
 | `catalog` | `str` | `SW_CATALOG` env or `socialwarehouse` | Logical catalog namespace |
 | `vintage` | `int` | `SW_VINTAGE` env or `2020` | Default vintage for asset runs |
 | `partition_state` | `Optional[str]` | `None` | Optional state code to partition runs by (e.g. `"TX"`); `None` = full-warehouse |
+| `hot_window_count` | `int` | `1` | Number of recent Census vintages to materialize to PostGIS (hot tier); vintages outside this window remain in Delta only |
 
 ### `SparkResource`
 
@@ -137,6 +138,7 @@ def delta_table_asset(
     compute_fn: Callable[[AssetExecutionContext, SparkSession], None],
     description: Optional[str] = None,
     group_name: Optional[str] = None,  # defaults to layer
+    partitions_def: Optional[PartitionsDefinition] = None,  # SW#281 backfill support
 ) -> AssetsDefinition: ...
 ```
 
@@ -159,6 +161,7 @@ def postgis_materialization_asset(
     copy_threshold: int = 100_000, # rows above which COPY is used instead of to_sql
     description: Optional[str] = None,
     group_name: str = "postgis",
+    partitions_def: Optional[PartitionsDefinition] = None,  # SW#281 backfill support
 ) -> AssetsDefinition: ...
 ```
 
@@ -217,6 +220,101 @@ requires verifying the API surface this layer uses
 `Definitions`, `define_asset_job`, `ScheduleDefinition`,
 `AssetSelection.groups`, `@sensor`, `SensorResult`, `RunRequest`,
 `SkipReason`, `SourceAsset`) is still stable.
+
+## Census vintage backfill (SW#281)
+
+The orchestration layer supports backfilling historical Census
+vintages via Dagster's partitioned-asset mechanism. Each vintage
+(ACS 5-year or Decennial) is a partition key; Dagster's backfill
+UI or CLI lets you select which vintages to materialize.
+
+### Partition keys
+
+Defined in `socialwarehouse.orchestration.partitions.CENSUS_VINTAGE_PARTITIONS`:
+
+| Key | Survey | Vintage |
+|---|---|---|
+| `dec_2020` | Decennial | 2020 |
+| `dec_2010` | Decennial | 2010 |
+| `acs5_2022` | ACS 5-year | 2018–2022 |
+| `acs5_2021` | ACS 5-year | 2017–2021 |
+| `acs5_2019` | ACS 5-year | 2015–2019 |
+| `acs5_2014` | ACS 5-year | 2010–2014 |
+| `acs5_2009` | ACS 5-year | 2005–2009 |
+
+### Hot/cold tier policy
+
+`WarehouseConfig.hot_window_count` (default 1) controls how many
+recent vintages materialize to PostGIS. Vintages outside the hot
+window remain in Delta Lake only (cold tier), per
+`docs/production-operations.md` section 5.
+
+Use `socialwarehouse.orchestration.partitions.is_hot_vintage()` in
+PostGIS compute functions to gate materialization:
+
+```python
+from socialwarehouse.orchestration.partitions import is_hot_vintage, parse_vintage_partition
+
+def _my_postgis_compute(context, spark, source_path):
+    if context.has_partition_key:
+        p = parse_vintage_partition(context.partition_key)
+        warehouse = context.resources.warehouse
+        if not is_hot_vintage(p.vintage_year, warehouse.vintage, warehouse.hot_window_count):
+            context.log.info("Skipping cold-tier vintage %s", context.partition_key)
+            return spark.createDataFrame([], schema=...)  # empty DF -> no PostGIS write
+    ...
+```
+
+### Making an asset partitioned
+
+Pass `partitions_def=CENSUS_VINTAGE_PARTITIONS` to the factory:
+
+```python
+from socialwarehouse.orchestration.partitions import CENSUS_VINTAGE_PARTITIONS
+
+my_asset = delta_table_asset(
+    layer="gold",
+    table="my_enriched",
+    deps=["silver/my_typed"],
+    compute_fn=_my_compute,
+    partitions_def=CENSUS_VINTAGE_PARTITIONS,
+)
+```
+
+Inside `compute_fn`, read the partition key:
+
+```python
+def _my_compute(context, spark):
+    if context.has_partition_key:
+        from socialwarehouse.orchestration.partitions import parse_vintage_partition
+        partition = parse_vintage_partition(context.partition_key)
+        vintage = partition.vintage_year
+    else:
+        vintage = 2020  # fallback for non-partitioned runs
+```
+
+### Running a backfill
+
+Via Dagit:
+1. Navigate to the `geo_vintage_backfill` job
+2. Click "Launch backfill"
+3. Select the partition keys to materialize
+
+Via CLI:
+
+```bash
+# Single vintage
+dagster job backfill --job geo_vintage_backfill --partition dec_2010
+
+# Multiple vintages
+dagster job backfill --job geo_vintage_backfill --partitions dec_2010,acs5_2014,acs5_2009
+```
+
+### Backwards compatibility
+
+The `partitions_def` parameter is opt-in. Assets that omit it
+continue to work exactly as before — non-partitioned, single-vintage
+materialization via `WarehouseConfig.vintage`.
 
 ## See also
 

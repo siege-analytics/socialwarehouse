@@ -36,16 +36,15 @@ the goal is to estimate boundaries for the remainder.
 |--------|---------|----------------|
 | Original | Siege Analytics | Algorithm designed and prototyped by Dheeraj Chand |
 | Advisory period | CiviTech | Deployed as an Airflow DAG on CiviTech infrastructure while Dheeraj served as advisor. The deployment used CiviTech resources; the algorithm remained Siege Analytics IP. |
-| Current | Reverberator | Lives in `queries.py` + `run_jobs.py` (legacy) and `src/sql/templates/*.sql` (refactored, step-aligned). Reverberator epic #27 tracks integration with SocialWarehouse as the substrate. |
+| Current | Siege Analytics (internal) | Lives in internal Siege Analytics tooling. Integration with SocialWarehouse as the substrate is planned. |
 
 ## Relationship to SocialWarehouse
 
-As SocialWarehouse becomes the boundary-estimation substrate (per
-Reverberator epic #27), this algorithm is the core primitive that the
-orchestration layer will invoke. The Dagster asset graph for the
-electoral/voter domain will wrap these steps as assets in the
-bronze→silver→gold pipeline, with each step's PostGIS output registered
-as a Delta table for auditability.
+As SocialWarehouse becomes the boundary-estimation substrate, this
+algorithm is the core primitive that the orchestration layer will invoke.
+The Dagster asset graph for the electoral/voter domain will wrap these
+steps as assets in the bronze→silver→gold pipeline, with each step's
+PostGIS output registered as a Delta table for auditability.
 
 The integration shape (shared vs. separate Dagster code location) is
 tracked in SW#282.

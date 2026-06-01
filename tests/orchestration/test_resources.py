@@ -66,3 +66,12 @@ def test_postgis_resource_constructs():
     r = PostGISResource(application_name="test", statement_timeout_ms=60_000)
     assert r.application_name == "test"
     assert r.statement_timeout_ms == 60_000
+
+
+def test_postgis_resource_has_raw_connection_method():
+    """PostGISResource exposes raw_connection for COPY operations."""
+    from socialwarehouse.orchestration.resources import PostGISResource
+
+    r = PostGISResource()
+    assert hasattr(r, "raw_connection")
+    assert callable(r.raw_connection)

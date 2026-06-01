@@ -29,6 +29,7 @@ Example usage:
 from __future__ import annotations
 
 import logging
+import os
 import sys
 
 import click
@@ -427,6 +428,219 @@ def materialize_electoral_backfill_addresses(tolerance):
         click.echo(f"Address backfill complete: {counts}")
     finally:
         spark.stop()
+
+
+@cli.command("init")
+@click.argument("project_name", default="socialwarehouse-dev")
+@click.option("--db-name", default="socialwarehouse_dev", help="Postgres DB name")
+@click.option("--db-user", default=None, help="Postgres user (default: $USER)")
+@click.option("--db-host", default="localhost", help="Postgres host")
+@click.option("--db-port", default=5432, type=int, help="Postgres port")
+@click.option("--db-password", default="", help="Postgres password")
+@click.option("--redis-url", default="redis://redis:6379/0", help="Redis URL for Celery")
+@click.option("--states", default="48", help="Default seed state FIPS (comma-separated)")
+@click.option("--non-interactive", is_flag=True, help="Skip prompts, use defaults/flags")
+@click.option("--docker", is_flag=True, help="Run `docker compose build` after setup")
+def init(project_name, db_name, db_user, db_host, db_port, db_password, redis_url, states, non_interactive, docker):
+    """One-time project setup: generate .env and configure credentials.
+
+    Writes a .env file with a generated SECRET_KEY and the provided
+    database credentials. Run this once after cloning the template.
+
+    Examples:
+        swh init
+        swh init myorg-warehouse --db-name myorg_dev --non-interactive
+        swh init myorg-warehouse --docker
+    """
+    import subprocess
+
+    from swh.template import find_repo_root, generate_env
+
+    root = find_repo_root()
+    env_path = root / ".env"
+
+    if env_path.exists():
+        click.echo(f".env already exists at {env_path}")
+        click.echo("Delete it first to regenerate, or edit it directly.")
+        return
+
+    if not non_interactive:
+        project_name = click.prompt("Project name", default=project_name)
+        db_name = click.prompt("Postgres DB name", default=db_name)
+        db_user = click.prompt("Postgres user", default=db_user or os.environ.get("USER", "postgres"))
+        db_host = click.prompt("Postgres host", default=db_host)
+        db_port = click.prompt("Postgres port", default=db_port, type=int)
+        db_password = click.prompt("Postgres password (leave blank for peer auth)", default="", show_default=False)
+        states = click.prompt("Default seed state FIPS", default=states)
+
+    env_content = generate_env(
+        project_name=project_name,
+        db_name=db_name,
+        db_user=db_user,
+        db_password=db_password,
+        db_host=db_host,
+        db_port=db_port,
+        redis_url=redis_url,
+        default_states=states,
+    )
+    env_path.write_text(env_content)
+    click.echo(f"Wrote {env_path}")
+
+    if docker:
+        click.echo("Running docker compose build...")
+        subprocess.run(["docker", "compose", "build"], cwd=root, check=False)
+
+    click.echo("")
+    click.echo("Next steps:")
+    click.echo("  1. Review and edit .env as needed")
+    click.echo("  2. Create the database:")
+    click.echo(f"       createdb {db_name}")
+    click.echo(f'       psql {db_name} -c "CREATE EXTENSION postgis;"')
+    click.echo("  3. Install and migrate:")
+    click.echo("       pip install -e .")
+    click.echo("       python manage.py migrate")
+    click.echo("  4. Seed data:")
+    click.echo(f"       swh seed --state {states}")
+    click.echo("  5. Verify:")
+    click.echo("       swh doctor")
+
+
+@cli.command("seed")
+@click.option("--state", "-s", default=None, help="State FIPS or abbreviation (default: from SW_DEFAULT_STATES or 48)")
+@click.option("--vintage", "-v", type=int, default=None, help="Census vintage year")
+@click.option("--skip", default=None, help="Comma-separated domains to skip (political,demographic,economic,civic)")
+@click.option("--dry-run", is_flag=True, help="Show what would run without executing")
+def seed(state, vintage, skip, dry_run):
+    """Seed a state's data across all four domains.
+
+    Wraps `manage.py seed_demo` for discoverability from the swh CLI.
+
+    Examples:
+        swh seed
+        swh seed --state VA
+        swh seed --state 48 --skip economic,civic
+        swh seed --dry-run
+    """
+    import subprocess
+
+    cmd = [sys.executable, "manage.py", "seed_demo"]
+
+    effective_state = state or os.environ.get("SW_DEFAULT_STATES", "48")
+    cmd.extend(["--states", effective_state])
+
+    if skip:
+        cmd.extend(["--skip", skip])
+    if dry_run:
+        cmd.append("--dry-run")
+    if vintage:
+        cmd.extend(["--vintage", str(vintage)])
+
+    click.echo(f"Running: {' '.join(cmd)}")
+    result = subprocess.run(cmd, check=False)
+    sys.exit(result.returncode)
+
+
+@cli.command("upgrade")
+@click.option("--remote", default="origin", help="Git remote to pull from")
+@click.option("--docker", is_flag=True, help="Also rebuild Docker images")
+@click.option("--skip-migrate", is_flag=True, help="Skip database migrations")
+def upgrade(remote, docker, skip_migrate):
+    """Pull upstream updates, install deps, and run migrations.
+
+    Pulls the latest from the template remote, reinstalls the package
+    to pick up new dependencies, and runs Django migrations.
+
+    Examples:
+        swh upgrade
+        swh upgrade --remote upstream
+        swh upgrade --docker
+    """
+    import subprocess
+
+    from swh.template import find_repo_root
+
+    root = find_repo_root()
+
+    click.echo(f"Pulling from {remote}...")
+    result = subprocess.run(["git", "pull", remote], cwd=root, check=False)
+    if result.returncode != 0:
+        click.echo("git pull failed — resolve conflicts and try again.", err=True)
+        sys.exit(result.returncode)
+
+    click.echo("Installing dependencies...")
+    subprocess.run([sys.executable, "-m", "pip", "install", "-e", "."], cwd=root, check=False)
+
+    if not skip_migrate:
+        click.echo("Running migrations...")
+        result = subprocess.run(
+            [sys.executable, "manage.py", "migrate", "--no-input"],
+            cwd=root,
+            check=False,
+        )
+        if result.returncode != 0:
+            click.echo("Migrations failed — check database connection.", err=True)
+            sys.exit(result.returncode)
+
+    if docker:
+        click.echo("Rebuilding Docker images...")
+        subprocess.run(["docker", "compose", "build", "--pull"], cwd=root, check=False)
+
+    click.echo("Upgrade complete.")
+
+
+@cli.command("doctor")
+@click.option("--json", "as_json", is_flag=True, help="Output results as JSON")
+@click.option("--verbose", is_flag=True, help="Show passing checks too")
+def doctor(as_json, verbose):
+    """Verify environment health: PostGIS, Redis, Spark, env vars, disk.
+
+    Runs a suite of checks and reports pass/warn/fail for each.
+
+    Examples:
+        swh doctor
+        swh doctor --verbose
+        swh doctor --json
+    """
+    import json as json_mod
+
+    from swh.doctor import Status, run_all_checks
+
+    results = run_all_checks()
+
+    if as_json:
+        data = [
+            {"name": r.name, "status": r.status.value, "detail": r.detail}
+            for r in results
+        ]
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo("Social Warehouse Doctor")
+        click.echo("=" * 50)
+        for r in results:
+            if r.status == Status.PASS:
+                icon = "OK"
+                style = "green"
+            elif r.status == Status.WARN:
+                icon = "WARN"
+                style = "yellow"
+            else:
+                icon = "FAIL"
+                style = "red"
+
+            if r.status != Status.PASS or verbose:
+                click.echo(
+                    click.style(f"  [{icon}]", fg=style)
+                    + f"  {r.name}: {r.detail}"
+                )
+
+        failures = [r for r in results if r.status == Status.FAIL]
+        warnings = [r for r in results if r.status == Status.WARN]
+        passes = [r for r in results if r.status == Status.PASS]
+        click.echo("")
+        click.echo(f"  {len(passes)} passed, {len(warnings)} warnings, {len(failures)} failures")
+
+        if failures:
+            sys.exit(1)
 
 
 if __name__ == "__main__":

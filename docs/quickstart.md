@@ -30,6 +30,40 @@ sudo systemctl start postgresql
 
 ## Setup
 
+### Quick path (recommended)
+
+```bash
+# 1. Clone
+git clone https://github.com/siege-analytics/socialwarehouse.git
+cd socialwarehouse
+
+# 2. Virtual env
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -e .
+
+# 3. Initialize — generates .env with SECRET_KEY and DB credentials
+swh init myproject
+
+# 4. Database
+createdb socialwarehouse_dev
+psql socialwarehouse_dev -c "CREATE EXTENSION postgis;"
+
+# 5. Migrate
+python manage.py migrate
+
+# 6. Create superuser
+python manage.py createsuperuser
+
+# 7. Verify environment
+swh doctor
+```
+
+### Manual path
+
+If you prefer to configure `.env` manually:
+
 ```bash
 # 1. Clone
 git clone https://github.com/siege-analytics/socialwarehouse.git
@@ -73,20 +107,28 @@ One command pulls a state's data across all four domains:
 
 ```bash
 # Default: Texas (per G design Q2 — demographic + economic diversity).
-python manage.py seed_demo
+swh seed
 
 # Smaller dev runs:
-python manage.py seed_demo --states RI                  # Rhode Island
-python manage.py seed_demo --states 11                  # DC
+swh seed --state RI                  # Rhode Island
+swh seed --state 11                  # DC
 
 # Multi-state:
-python manage.py seed_demo --states 48,06,36           # TX + CA + NY
+swh seed --state 48,06,36           # TX + CA + NY
 
 # Skip domains you don't need yet:
-python manage.py seed_demo --states 48 --skip economic,civic
+swh seed --state 48 --skip economic,civic
 
 # See what would run without doing it:
-python manage.py seed_demo --states 48 --dry-run
+swh seed --dry-run
+```
+
+The `swh seed` command wraps `manage.py seed_demo`; both interfaces are supported:
+
+```bash
+# These are equivalent:
+swh seed --state 48
+python manage.py seed_demo --states 48
 ```
 
 The `seed_demo` command wraps these per-domain commands; you can run them individually if you want finer control:

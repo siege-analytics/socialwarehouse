@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dagster import Definitions
 
-from socialwarehouse.orchestration.assets import civic, geo
+from socialwarehouse.orchestration.assets import civic, demographic, geo
 from socialwarehouse.orchestration.resources import (
     PostGISResource,
     SparkResource,
@@ -28,7 +28,7 @@ from socialwarehouse.orchestration.sensors import all_sensors
 
 
 defs = Definitions(
-    assets=[*geo.all_assets, *civic.all_assets],
+    assets=[*geo.all_assets, *civic.all_assets, *demographic.all_assets],
     jobs=all_jobs,
     schedules=all_schedules,
     sensors=all_sensors,

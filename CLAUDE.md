@@ -85,6 +85,19 @@ Maps Census decades to effective year ranges. `for_year(2018)` returns 2010 vint
 ### DimGeography (sw_warehouse)
 SCD Type 2 geography dimension. Natural key: (geoid, vintage_year). Parent FK for drill-up (tract → county → state).
 
+## Template CLI Commands
+
+The `swh` CLI includes template lifecycle commands for adopters:
+
+```bash
+swh init myproject              # Generate .env, configure credentials
+swh seed --state TX             # Seed a state's data (wraps seed_demo)
+swh upgrade                     # Pull upstream, install deps, migrate
+swh doctor                      # Verify PostGIS, Redis, env vars, disk
+```
+
+Implementation: `swh/cli.py` (commands), `swh/template.py` (.env generation), `swh/doctor.py` (health checks).
+
 ## Management Commands
 
 ```bash

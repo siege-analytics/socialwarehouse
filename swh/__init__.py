@@ -8,7 +8,6 @@ geospatial datasets.
 Architecture:
     Social Warehouse = infrastructure (Docker containers: PostGIS, Spark, Sedona)
     siege_utilities  = the "verbs" that populate the warehouse
-    reverberator     = a second set of "verbs" that analyze the data
 """
 
 __version__ = "1.0.0"

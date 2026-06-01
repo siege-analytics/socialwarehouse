@@ -29,7 +29,14 @@ import io
 import time
 from typing import Callable, Iterable, Optional
 
-from dagster import AssetExecutionContext, AssetsDefinition, AssetKey, MaterializeResult, asset
+from dagster import (
+    AssetExecutionContext,
+    AssetsDefinition,
+    AssetKey,
+    MaterializeResult,
+    PartitionsDefinition,
+    asset,
+)
 
 
 def _key_for(layer: str, table: str) -> AssetKey:
@@ -45,6 +52,7 @@ def delta_table_asset(
     compute_fn: Callable[[AssetExecutionContext, "SparkSession"], None],  # noqa: F821
     description: Optional[str] = None,
     group_name: Optional[str] = None,
+    partitions_def: Optional[PartitionsDefinition] = None,
 ) -> AssetsDefinition:
     """Factory: build a Dagster asset that materializes a Delta table.
 
@@ -61,6 +69,8 @@ def delta_table_asset(
         compute_fn: callable(context, spark) -> None that writes the Delta table
         description: optional human-readable description (defaults to a stock string)
         group_name: optional Dagster group (defaults to the layer)
+        partitions_def: optional PartitionsDefinition for vintage backfill support;
+            when provided, compute_fn receives context.partition_key
     """
     from socialwarehouse.delta.config import get_table_path
     from socialwarehouse.orchestration.resources import SparkResource
@@ -76,6 +86,7 @@ def delta_table_asset(
         description=description or f"Delta table {layer}.{table} (path: {get_table_path(layer, table)})",
         group_name=group_name or layer,
         required_resource_keys={"spark"},
+        partitions_def=partitions_def,
     )
     def _delta_asset(context: AssetExecutionContext) -> MaterializeResult:
         spark_resource: SparkResource = getattr(context.resources, "spark")
@@ -126,6 +137,7 @@ def postgis_materialization_asset(
     copy_threshold: int = 100_000,
     description: Optional[str] = None,
     group_name: str = "postgis",
+    partitions_def: Optional[PartitionsDefinition] = None,
 ) -> AssetsDefinition:
     """Factory: build a Dagster asset that materializes a Delta table into PostGIS.
 
@@ -148,6 +160,8 @@ def postgis_materialization_asset(
         copy_threshold: row count above which COPY is used instead of to_sql (default 100K)
         description: optional override
         group_name: Dagster group name (default 'postgis')
+        partitions_def: optional PartitionsDefinition for vintage backfill support;
+            when provided, compute_sql receives context.partition_key via the context
     """
     from socialwarehouse.delta.config import get_table_path
     from socialwarehouse.orchestration.resources import PostGISResource, SparkResource
@@ -159,6 +173,7 @@ def postgis_materialization_asset(
         or f"PostGIS materialization: {source_layer}.{source_table} -> {target_django_app_label}.{target_django_model_name}",
         group_name=group_name,
         required_resource_keys={"spark", "postgis"},
+        partitions_def=partitions_def,
     )
     def _postgis_asset(context: AssetExecutionContext) -> MaterializeResult:
         spark_resource: SparkResource = getattr(context.resources, "spark")

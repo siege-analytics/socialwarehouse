@@ -27,6 +27,11 @@ from socialwarehouse.orchestration.asset_factories import (
     delta_table_asset,
     postgis_materialization_asset,
 )
+from socialwarehouse.orchestration.partitions import (
+    CENSUS_VINTAGE_PARTITIONS,
+    is_hot_vintage,
+    parse_vintage_partition,
+)
 
 # ── Bronze: declared as a SourceAsset; ingest is owned by the upstream ──
 # Pre-Dagster ingest pipeline (or sensor — see sensors.py) lands raw
@@ -77,13 +82,15 @@ addresses_typed = delta_table_asset(
 
 
 # ── Gold: enrich silver addresses with boundary attributes ──
+# Partitioned by Census vintage so historical boundary sets can be
+# backfilled independently (SW#281).
 def _compute_addresses_enriched(context, spark):
     """Enrich silver addresses with state/county/CD boundary attributes.
 
     Delegates to ``socialwarehouse.delta.enrichment.enrich_addresses_with_boundaries``
-    — the existing Spark+Sedona enrichment function. The orchestration
-    layer is responsible for kicking it with the right input + writing
-    the output to the gold path; it does NOT reimplement enrichment.
+    — the existing Spark+Sedona enrichment function. When running as a
+    partitioned asset, ``context.partition_key`` determines the vintage
+    year for boundary lookup.
     """
     from socialwarehouse.delta.config import get_table_path
     from socialwarehouse.delta.enrichment import enrich_addresses_with_boundaries
@@ -91,13 +98,16 @@ def _compute_addresses_enriched(context, spark):
     silver_path = get_table_path("silver", "addresses_typed")
     gold_path = get_table_path("gold", "addresses_enriched")
 
-    # The existing enrichment fn takes a table name + spark session;
-    # for now load via path and pass a temp view. When the delta layer
-    # gets a path-based variant this becomes a one-liner.
     silver_df = spark.read.format("delta").load(silver_path)
     silver_df.createOrReplaceTempView("addresses_typed_view")
 
-    vintage = getattr(context.partition_key, "vintage", 2020) if context.has_partition_key else 2020
+    if context.has_partition_key:
+        partition = parse_vintage_partition(context.partition_key)
+        vintage = partition.vintage_year
+    else:
+        vintage = 2020
+
+    context.log.info("enriching addresses with vintage=%d boundaries", vintage)
     enriched = enrich_addresses_with_boundaries(spark, "addresses_typed_view", year=vintage)
 
     enriched.write.format("delta").mode("overwrite").save(gold_path)
@@ -109,6 +119,7 @@ addresses_enriched = delta_table_asset(
     deps=["silver/addresses_typed"],
     compute_fn=_compute_addresses_enriched,
     description="Boundary-enriched addresses (gold). Wraps delta.enrichment.enrich_addresses_with_boundaries.",
+    partitions_def=CENSUS_VINTAGE_PARTITIONS,
 )
 
 
@@ -138,6 +149,7 @@ geo_address_postgis = postgis_materialization_asset(
     target_django_model_name="Address",
     compute_sql=_shape_for_address_model,
     description="Materialize gold.addresses_enriched into PostGIS geo.address (Django Address model).",
+    partitions_def=CENSUS_VINTAGE_PARTITIONS,
 )
 
 

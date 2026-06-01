@@ -51,6 +51,14 @@ class WarehouseConfig(ConfigurableResource):
         default=None,
         description="Optional state code to partition runs by (e.g. 'TX'). None = full-warehouse run.",
     )
+    hot_window_count: int = Field(
+        default=1,
+        description=(
+            "Number of recent Census vintages to materialize to PostGIS (hot tier). "
+            "Vintages outside this window remain in Delta Lake only (cold tier). "
+            "See docs/production-operations.md section 5."
+        ),
+    )
 
 
 class SparkResource(ConfigurableResource):

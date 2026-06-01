@@ -6,6 +6,6 @@ their own per-domain modules following the same pattern; see
 ``docs/orchestration/instance-project-guide.md``.
 """
 
-from socialwarehouse.orchestration.assets import civic, demographic, geo
+from socialwarehouse.orchestration.assets import civic, demographic, economic, geo
 
-__all__ = ["civic", "demographic", "geo"]
+__all__ = ["civic", "demographic", "economic", "geo"]

@@ -104,6 +104,11 @@ class AddressBoundaryPeriod(models.Model):
     mosquito_district_geoid = models.CharField(max_length=10, null=True, blank=True)
     other_special_district_geoid = models.CharField(max_length=10, null=True, blank=True)
 
+    # SW#305: tribal area and county subdivision boundary types.
+    # Upstream models added in SU PR #553.
+    tribal_area_geoid = models.CharField(max_length=20, null=True, blank=True)
+    county_subdivision_geoid = models.CharField(max_length=20, null=True, blank=True)
+
     # siege_geo ForeignKeys (optional, for rich queries)
     siege_state = models.ForeignKey(
         "siege_geo.State", on_delete=models.SET_NULL,

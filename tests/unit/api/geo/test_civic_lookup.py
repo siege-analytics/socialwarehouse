@@ -177,6 +177,18 @@ class TestHappyPath:
         # Names null when no DimGeography row
         assert d["vtd"]["name"] is None
 
+        # HATEOAS URLs point to boundary detail endpoints
+        assert d["state"]["url"] == "/api/geo/boundaries/state/48/"
+        assert d["county"]["url"] == "/api/geo/boundaries/county/48453/"
+        assert d["congressional"]["url"] == "/api/geo/boundaries/cd/4810/"
+        assert d["vtd"]["url"] == "/api/geo/boundaries/vtd/48453000001/"
+        assert d["zcta"]["url"] == "/api/geo/boundaries/zcta/78701/"
+        assert d["state_senate"]["url"] == "/api/geo/boundaries/state_leg_upper/4814/"
+        assert d["state_house"]["url"] == "/api/geo/boundaries/state_leg_lower/48049/"
+        # block_group and block have no boundary detail endpoint
+        assert d["block_group"]["url"] is None
+        assert d["block"]["url"] is None
+
     def test_null_cache_fields_omitted(
         self, api_client, lookup_url, address_no_cd
     ):

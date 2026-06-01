@@ -563,17 +563,18 @@ from socialwarehouse.warehouse.models import (
 
 # Address boundary-cache field name -> response district key + DimGeography
 # summary_level. Cache field null -> district key omitted from response.
+# (model_field, response_key, dim_geography_summary_level, boundary_url_slug)
 _DISTRICT_FIELDS = (
-    ("state_geoid", "state", "state"),
-    ("county_geoid", "county", "county"),
-    ("tract_geoid", "tract", "tract"),
-    ("block_group_geoid", "block_group", "blockgroup"),
-    ("block_geoid", "block", "block"),
-    ("vtd_geoid", "vtd", "vtd"),
-    ("cd_geoid", "congressional", "cd"),
-    ("sldu_geoid", "state_senate", "sldu"),
-    ("sldl_geoid", "state_house", "sldl"),
-    ("zcta_geoid", "zcta", "zcta"),
+    ("state_geoid", "state", "state", "state"),
+    ("county_geoid", "county", "county", "county"),
+    ("tract_geoid", "tract", "tract", "tract"),
+    ("block_group_geoid", "block_group", "blockgroup", None),
+    ("block_geoid", "block", "block", None),
+    ("vtd_geoid", "vtd", "vtd", "vtd"),
+    ("cd_geoid", "congressional", "cd", "cd"),
+    ("sldu_geoid", "state_senate", "sldu", "state_leg_upper"),
+    ("sldl_geoid", "state_house", "sldl", "state_leg_lower"),
+    ("zcta_geoid", "zcta", "zcta", "zcta"),
 )
 
 _TRUTHY = {"1", "true", "yes", "y", "t"}
@@ -645,21 +646,36 @@ def _resolve_districts(address):
     vintage_year=address.census_year). Name null when no matching row.
     Null cache fields are OMITTED from the dict (not emitted as null)
     so absence is visible.
+
+    Each district entry includes a HATEOAS ``url`` pointing to the
+    boundary detail endpoint when the boundary type has a registered
+    route; ``None`` otherwise (block_group, block have no detail
+    endpoint in the current URL surface).
     """
+    from django.urls import reverse
+
     out = {}
     vintage = address.census_year or None
 
     geoids_to_lookup = {}
-    for field_name, response_key, summary_level in _DISTRICT_FIELDS:
+    for field_name, response_key, summary_level, url_slug in _DISTRICT_FIELDS:
         geoid = getattr(address, field_name, None) or None
         if geoid:
-            out[response_key] = {"geoid": geoid, "name": None}
+            url = None
+            if url_slug:
+                try:
+                    url = reverse(
+                        "geo:boundary_detail",
+                        kwargs={"boundary_type": url_slug, "geoid": geoid},
+                    )
+                except Exception:
+                    pass
+            out[response_key] = {"geoid": geoid, "name": None, "url": url}
             geoids_to_lookup[response_key] = (geoid, summary_level)
 
     if not geoids_to_lookup:
         return out
 
-    # One query against DimGeography; map (geoid, summary_level) -> name.
     geoid_list = [g for g, _ in geoids_to_lookup.values()]
     dim_filter = {"geoid__in": geoid_list}
     if vintage:

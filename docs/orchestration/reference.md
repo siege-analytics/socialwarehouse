@@ -77,6 +77,11 @@ Reads connection params from `django.conf.settings.DATABASES['default']`.
 | `application_name` | `str` | `"socialwarehouse-orchestration"` | Postgres `application_name` for connection identification |
 | `statement_timeout_ms` | `int` | `300_000` (5min) | Postgres `statement_timeout` in milliseconds; override per-asset for long materializations |
 
+Methods:
+
+- `engine()` — context manager yielding a SQLAlchemy engine (for `to_sql` and general queries)
+- `raw_connection()` — context manager yielding a raw psycopg2 connection (for `COPY` operations)
+
 Usage:
 
 ```python
@@ -84,6 +89,12 @@ def _my_compute(context):
     postgis: PostGISResource = context.resources.postgis
     with postgis.engine() as engine:
         df.to_sql("table", engine, if_exists="append", index=False)
+
+    # For COPY operations (used by postgis_materialization_asset above the copy_threshold):
+    with postgis.raw_connection() as conn:
+        with conn.cursor() as cur:
+            cur.copy_expert("COPY table FROM STDIN WITH CSV HEADER", buffer)
+        conn.commit()
 ```
 
 ## Asset key conventions
@@ -145,6 +156,7 @@ def postgis_materialization_asset(
     target_django_app_label: str,  # e.g. 'geo'
     target_django_model_name: str, # e.g. 'Address'
     compute_sql: Callable[[SparkSession, str], DataFrame],
+    copy_threshold: int = 100_000, # rows above which COPY is used instead of to_sql
     description: Optional[str] = None,
     group_name: str = "postgis",
 ) -> AssetsDefinition: ...
@@ -156,9 +168,22 @@ def postgis_materialization_asset(
   `["postgis", app_label, model_name.lower()]`, dep on
   `["warehouse", source_layer, source_table]`, both `SparkResource`
   and `PostGISResource` injected.
-- Materialization metadata: `{"source_path": <delta-path>, "target_table": <db-table>, "row_count": int}`.
-- Currently uses `df.toPandas() ; pdf.to_sql(...)` — see SW#280 for
-  the planned COPY-based path for large datasets.
+- **Write method**: when `row_count > copy_threshold`, uses PostgreSQL
+  `COPY FROM STDIN WITH CSV HEADER` via psycopg2 (faster for large
+  datasets). Below the threshold, uses `pandas.to_sql()`.
+- **Observability metadata** in `MaterializeResult`:
+
+  | Key | Type | Description |
+  |---|---|---|
+  | `source_path` | `str` | Delta table path |
+  | `target_table` | `str` | PostGIS table name |
+  | `row_count` | `int` | Number of rows written |
+  | `write_method` | `str` | `"copy"` or `"to_sql"` |
+  | `copy_threshold` | `int` | Configured threshold |
+  | `timing_spark_read_s` | `float` | Seconds for Spark read + compute_sql |
+  | `timing_to_pandas_s` | `float` | Seconds for toPandas conversion |
+  | `timing_postgis_write_s` | `float` | Seconds for PostGIS write |
+  | `timing_total_s` | `float` | Total wall-clock seconds |
 
 ## Common errors and fixes
 
@@ -172,7 +197,7 @@ def postgis_materialization_asset(
 | `py4j.protocol.Py4JJavaError: ... Sedona` | Sedona not registered, but asset uses spatial operations | Set `SparkResource(enable_sedona=True)` (default) and confirm `apache-sedona` is installed (`pip install -e ".[spark]"`) |
 | Asset graph in UI is empty / "no assets" | Definitions module not discovered | Verify launch command: `dagster dev -m socialwarehouse.orchestration` (not `python -m`); confirm `socialwarehouse.orchestration.defs` exists |
 | Sensor enabled but never fires | Daemon not running OR sensor probe failing | `dagster dev` output should show "daemon running"; check Sensors tab → Cursor → recent evaluations for errors |
-| `to_sql` extremely slow / OOM | Materialization above ~500K rows hits the `toPandas` bottleneck | Track via SW#280 — switch to Parquet staging + Postgres COPY |
+| `to_sql` extremely slow / OOM | Materialization above ~500K rows hits the `toPandas` bottleneck | Set `copy_threshold` (default 100K) — loads above the threshold automatically use PostgreSQL COPY (SW#280) |
 
 ## Pinned Dagster version
 

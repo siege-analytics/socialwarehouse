@@ -85,6 +85,19 @@ Maps Census decades to effective year ranges. `for_year(2018)` returns 2010 vint
 ### DimGeography (sw_warehouse)
 SCD Type 2 geography dimension. Natural key: (geoid, vintage_year). Parent FK for drill-up (tract → county → state).
 
+## Template CLI Commands
+
+The `swh` CLI includes template lifecycle commands for adopters:
+
+```bash
+swh init myproject              # Generate .env, configure credentials
+swh seed --state TX             # Seed a state's data (wraps seed_demo)
+swh upgrade                     # Pull upstream, install deps, migrate
+swh doctor                      # Verify PostGIS, Redis, env vars, disk
+```
+
+Implementation: `swh/cli.py` (commands), `swh/template.py` (.env generation), `swh/doctor.py` (health checks).
+
 ## Management Commands
 
 ```bash
@@ -107,6 +120,10 @@ python manage.py compute_geographic_intersections --year 2020 --type all
 | `/api/warehouse/geographies/` | GET | Geography dimension browser |
 | `/api/warehouse/election-results/` | GET | Election results by geography |
 | `/api/warehouse/acs-estimates/` | GET | ACS demographic estimates |
+
+## Production Operations
+
+When working on an adopter's production deployment (infrastructure, scaling, backup, partitioning), read [`docs/production-operations.md`](docs/production-operations.md) first. It covers the 10 operational decisions adopters face when outgrowing the single-node defaults: HA topology, backup/PITR, connection pooling, partitioning, cold-tier storage, hub-to-downstream distribution, metadata store isolation, node placement, index hygiene, and scale triggers.
 
 ## Development
 

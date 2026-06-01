@@ -253,6 +253,17 @@ class Address(models.Model):
         ),
     )
 
+    # SW#305: tribal area and county subdivision boundary types.
+    # Upstream models added in SU PR #553.
+    tribal_area_geoid = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="American Indian/Alaska Native/Native Hawaiian Area GEOID.",
+    )
+    county_subdivision_geoid = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="County Subdivision (township, borough, etc.) GEOID.",
+    )
+
     census_units_assigned_at = models.DateTimeField(null=True, blank=True)
 
     # ── Address construction timeline (TIGER ADDRFEAT) ──────────────────
@@ -420,6 +431,8 @@ class Address(models.Model):
         "fire_district", "water_district", "hospital_district",
         "library_district", "cemetery_district", "mosquito_district",
         "other_special_district",
+        # SW#305: tribal area and county subdivision (SU PR #553)
+        "tribal_area", "county_subdivision",
     )
 
     # SW#198: boundary types that are subject to redistricting, mapped

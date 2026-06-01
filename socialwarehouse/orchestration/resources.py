@@ -112,14 +112,8 @@ class PostGISResource(ConfigurableResource):
         description="Postgres statement_timeout in milliseconds (default 5 min). Long-running materializations should override per-asset.",
     )
 
-    @contextmanager
-    def engine(self) -> Iterator["Engine"]:  # noqa: F821 — typed at use site
-        """Yield a SQLAlchemy engine bound to Django's default DB.
-
-        Engine is disposed on context exit (connection-pool cleanup).
-        Long-running materializations should hold the engine for the
-        full asset and not open/close per-row.
-        """
+    def _make_engine(self) -> "Engine":  # noqa: F821
+        """Build a SQLAlchemy engine bound to Django's default DB."""
         import django
 
         if not django.apps.apps.ready:
@@ -133,14 +127,40 @@ class PostGISResource(ConfigurableResource):
             f"postgresql+psycopg2://{db['USER']}:{db['PASSWORD']}"
             f"@{db['HOST']}:{db.get('PORT', 5432)}/{db['NAME']}"
         )
-        engine = create_engine(
+        return create_engine(
             url,
             connect_args={
                 "application_name": self.application_name,
                 "options": f"-c statement_timeout={self.statement_timeout_ms}",
             },
         )
+
+    @contextmanager
+    def engine(self) -> Iterator["Engine"]:  # noqa: F821 — typed at use site
+        """Yield a SQLAlchemy engine bound to Django's default DB.
+
+        Engine is disposed on context exit (connection-pool cleanup).
+        Long-running materializations should hold the engine for the
+        full asset and not open/close per-row.
+        """
+        engine = self._make_engine()
         try:
             yield engine
         finally:
+            engine.dispose()
+
+    @contextmanager
+    def raw_connection(self) -> Iterator:
+        """Yield a raw psycopg2 connection for COPY operations.
+
+        The connection comes from a fresh SQLAlchemy engine's pool.
+        Caller is responsible for commit/rollback; the connection and
+        engine are cleaned up on context exit.
+        """
+        engine = self._make_engine()
+        conn = engine.raw_connection()
+        try:
+            yield conn
+        finally:
+            conn.close()
             engine.dispose()

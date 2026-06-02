@@ -1,6 +1,6 @@
 # ${PROJECT_NAME}
 
-Data warehouse for social, civic, and economic data. Built on Spark + PostgreSQL/PostGIS + Neo4j, with a Django web layer pulled in via the `geodjango_simple_template` (GST) submodule.
+Data warehouse for social, civic, and economic data. Built on Spark + PostgreSQL/PostGIS + Neo4j, with a Django web layer.
 
 ## What this is
 
@@ -9,7 +9,7 @@ Data warehouse for social, civic, and economic data. Built on Spark + PostgreSQL
 - A PostGIS-backed star-schema warehouse for geographic + demographic + civic data.
 - Spark jobs (Spark 4.1.1 + Sedona 1.9.0) for distributed processing and spatial joins.
 - Neo4j as a graph layer for network-shaped queries.
-- A Django REST API (via the GST submodule) that serves warehouse content over HTTP.
+- A Django REST API that serves warehouse content over HTTP.
 
 Instance projects (FEC pipelines, electoral analytics, others) consume this template + add instance-specific transforms.
 
@@ -34,7 +34,7 @@ make up-full               # everything (Spark + Zeppelin + Maven)
 | Spatial analytics | Apache Sedona 1.9.0 |
 | Warehouse | PostgreSQL 16 + PostGIS |
 | Graph | Neo4j 5 Community |
-| Application layer | Django + GST submodule |
+| Application layer | Django + DRF |
 | Async tasks | Celery + Redis |
 | Container OS | Ubuntu 24.04 (Python 3.12) |
 

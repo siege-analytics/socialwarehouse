@@ -30,7 +30,7 @@ SocialWarehouse is designed to be forked. The same architecture (Delta Lake meda
 - **Boundary catalog** (`socialwarehouse/geo/`) — `Address` cache + `AddressBoundaryPeriod` temporal snapshots + F11 helpers + `CensusVintageConfig`, covering 13 US Census boundary types
 - **Dagster orchestration** (optional extra `[orchestration]`) — `ConfigurableResource`s, asset factories, demo `geo` asset graph end-to-end (bronze → silver → gold → PostGIS), one schedule + sensor example
 - **Django REST API** (DSTK replacement) — geocoding, reverse-geocoding, boundary lookup, proximity, intersections, civic-lookup
-- **Django web app frame** via [`geodjango_simple_template`](https://github.com/siege-analytics/geodjango_simple_template) git submodule
+- **Django web app frame** via Grappelli admin + DRF browsable API
 - **Documented fork patterns** under [`docs/template/`](docs/template/) — five how-tos covering the full fork lifecycle (rename, swap-geography, add-domain, upgrade-from-upstream, plus the README overview)
 
 ### What you bring
@@ -71,19 +71,9 @@ See [`docs/architecture.md`](docs/architecture.md) for project-level architectur
 
 ## Cloning
 
-This repo uses a git submodule for the GeoDjango template (GST) at `vendor/geodjango_simple_template/`. Clone with submodules:
-
 ```bash
-git clone --recurse-submodules git@github.com:siege-analytics/socialwarehouse.git
+git clone git@github.com:siege-analytics/socialwarehouse.git
 ```
-
-If you already have a clone without submodules:
-
-```bash
-git submodule update --init --recursive
-```
-
-The GST submodule is a pinned snapshot of [siege-analytics/geodjango_simple_template](https://github.com/siege-analytics/geodjango_simple_template). To bump the pin: `cd vendor/geodjango_simple_template && git fetch && git checkout <new-sha> && cd ../.. && git add vendor/geodjango_simple_template && git commit`.
 
 ## Using
 

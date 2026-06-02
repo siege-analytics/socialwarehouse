@@ -6,27 +6,9 @@ Override in development.py, production.py, or test.py as needed.
 """
 
 import os
-import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-
-# GST submodule wiring: insert the GST Django app directory into sys.path
-# so `import locations` resolves when Django processes INSTALLED_APPS.
-#
-# This MUST run before INSTALLED_APPS is referenced by Django -- which
-# means it must run at settings module-load time, not at manage.py time.
-# Pre-fix (ST3 / SW#141) the sys.path insert lived only in manage.py;
-# any entry point that bypassed manage.py (wsgi.py / asgi.py / pytest /
-# ad-hoc `from socialwarehouse.settings import base`) hit
-# `ModuleNotFoundError: No module named 'locations'` at startup.
-#
-# Putting it here makes every entry point that loads settings get the
-# wiring automatically. manage.py's redundant insert is preserved as
-# defense-in-depth but is no longer load-bearing.
-_GST_APP_DIR = BASE_DIR / "vendor" / "geodjango_simple_template" / "app" / "hellodjango"
-if _GST_APP_DIR.is_dir() and str(_GST_APP_DIR) not in sys.path:
-    sys.path.insert(0, str(_GST_APP_DIR))
 
 # Dev-only fallback. Production settings overrides this with a fail-fast
 # os.environ["DJANGO_SECRET_KEY"] read (ST1 / SW#139); production deployments
@@ -62,8 +44,6 @@ INSTALLED_APPS = [
     "socialwarehouse.demographic",
     "socialwarehouse.economic",
     "socialwarehouse.civic",
-    # GST apps from vendor submodule (bare name; sys.path wired above; P1B-B #68).
-    "locations",
 ]
 
 MIDDLEWARE = [
@@ -130,61 +110,6 @@ CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localho
 
 STATIC_URL = "static/"
 
-# Pull GST's project-level staticfiles into Django's collectstatic surface.
-# GST's per-app static dirs are picked up via APP_DIRS automatically.
-STATICFILES_DIRS = [
-    BASE_DIR / "vendor" / "geodjango_simple_template" / "app" / "hellodjango" / "staticfiles",
-]
+STATICFILES_DIRS = []
 
-# ---------------------------------------------------------------------------
-# GST-required settings (read at module-load by hellodjango/utilities/* and
-# hellodjango/locations/*). Mirrored from
-# vendor/geodjango_simple_template/app/hellodjango/hellodjango/settings/
-# (path_settings.py, generic_gis_settings.py, vector_data_file_settings.py,
-# api_settings/nominatim_geocoding.py). Defined inline rather than imported
-# to avoid pulling in GST's other settings modules (which include statsmodels
-# and Django config that would conflict with SW's).
-# ---------------------------------------------------------------------------
-
-# GST data directory layout. GST modules join these into deeper paths.
-# These point under the SW repo root so GST's data lives alongside SW data.
-_GST_DATA_DIR = BASE_DIR / "data"
-SPATIAL_DATA_SUBDIRECTORY = _GST_DATA_DIR / "spatial"
-TABULAR_DATA_SUBDIRECTORY = _GST_DATA_DIR / "tabular"
-VECTOR_SPATIAL_DATA_SUBDIRECTORY = SPATIAL_DATA_SUBDIRECTORY / "vector"
-RASTER_SPATIAL_DATA_SUBDIRECTORY = SPATIAL_DATA_SUBDIRECTORY / "raster"
-POINTCLOUD_SPATIAL_DATA_SUBDIRECTORY = SPATIAL_DATA_SUBDIRECTORY / "pointcloud"
-CENSUS_TIGER_LINE_DATA = VECTOR_SPATIAL_DATA_SUBDIRECTORY / "census_tiger"
 LOGS_DIRECTORY = BASE_DIR / "logs"
-NECESSARY_PATHS = [
-    _GST_DATA_DIR,
-    SPATIAL_DATA_SUBDIRECTORY,
-    TABULAR_DATA_SUBDIRECTORY,
-    VECTOR_SPATIAL_DATA_SUBDIRECTORY,
-    RASTER_SPATIAL_DATA_SUBDIRECTORY,
-    POINTCLOUD_SPATIAL_DATA_SUBDIRECTORY,
-    CENSUS_TIGER_LINE_DATA,
-    LOGS_DIRECTORY,
-]
-
-# GST projection constants (from GST generic_gis_settings.py).
-DEFAULT_PROJECTION_NUMBER = 4326
-PREFERRED_PROJECTION_FOR_US_DISTANCE_SEARCH = 5070
-
-# GST nominatim API constants (from GST api_settings/nominatim_geocoding.py).
-# SW#22 made these env-overridable so the geocoding profile can route
-# to the self-hosted Nominatim service (see docs/geocoding-self-host.md).
-# ``NOMINATIM_URL`` is the base URL (no trailing path); the ``/search?``
-# suffix is appended here for back-compat with the existing
-# ``NOMINATIM_API_BASE_URL`` consumers.
-NOMINATIM_URL = os.environ.get("NOMINATIM_URL", "https://nominatim.openstreetmap.org")
-NOMINATIM_API_BASE_URL = f"{NOMINATIM_URL.rstrip('/')}/search?"
-NOMINATIM_USER_AGENT = os.environ.get("NOMINATIM_USER_AGENT", "socialwarehouse")
-NOMINATIM_LATITUDE_VARIABLE = "lat"
-NOMINATIM_LONGITUDE_VARIABLE = "lon"
-
-# GST vector file extensions (from GST vector_data_file_settings.py).
-VALID_VECTOR_FILE_EXTENSIONS = [
-    ".dwg", ".dxf", ".gdb", ".geojson", ".gpkg", ".json",
-    ".kml", ".kmz", ".shp", ".swm2", ".swmaps", ".swmz",
-]

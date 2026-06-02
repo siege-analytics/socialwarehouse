@@ -41,7 +41,7 @@ You probably **don't need to fork** SW if you're:
 | **Boundary catalog** (`geo/models/`) | `Address`, `AddressBoundaryPeriod`, `_BOUNDARY_TYPES` registry, F11 helpers | Your geography's boundary types (see [how-to-swap-geography.md](how-to-swap-geography.md)) |
 | **Django REST API** (`api/`) | `geocode`, `reverse_geocode`, `boundaries`, `proximity`, `intersections`, `civic_lookup` patterns | Your domain-specific endpoints |
 | **Dagster orchestration** (`orchestration/`) | `WarehouseConfig`, `SparkResource`, `PostGISResource`, `delta_table_asset`, `postgis_materialization_asset` factories, demo geo asset graph | Your domain asset modules (`orchestration/assets/<domain>.py`); your schedules + sensors |
-| **Django web app frame** | GST submodule (`vendor/geodjango_simple_template/`) — `locations` app + project staticfiles | Your instance-specific views, admin extensions |
+| **Django web app frame** | Grappelli admin + DRF browsable API under `/webapp/` prefix | Your instance-specific views, admin extensions |
 | **Project structure** | Package layout, settings hierarchy (`base`/`dev`/`prod`/`test`), Makefile + docker-compose pattern | Your renamed package + Django apps + .env |
 
 ## How-to docs in this directory
@@ -70,7 +70,7 @@ Per [`[rule:authoring-against-state]`](https://github.com/siege-analytics/claude
 
 - **Single-table analytical projects.** Use `pandas` or `polars` directly; SW's warehouse layers are overhead.
 - **Real-time / streaming workloads.** SW is batch-oriented (Delta refreshes, Dagster schedules). Streaming-first systems should look at Kafka + Flink / Spark Streaming patterns, not this template.
-- **Pure web apps with no warehouse.** GST ([geodjango_simple_template](https://github.com/siege-analytics/geodjango_simple_template)) is the right starting point; SW is GST + the warehouse stack.
+- **Pure web apps with no warehouse.** A standalone GeoDjango project is a better fit; SW is a warehouse stack with a web layer on top.
 - **Project that needs a different orchestration framework.** If you've committed to Airflow / Prefect / dbt-only, the SW Dagster layer is wrong shape — though the Delta + PostGIS pieces are usable independently.
 
 ## See also

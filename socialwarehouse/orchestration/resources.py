@@ -119,9 +119,30 @@ class PostGISResource(ConfigurableResource):
         default=300_000,
         description="Postgres statement_timeout in milliseconds (default 5 min). Long-running materializations should override per-asset.",
     )
+    pool_size: int = Field(
+        default=5,
+        description="SQLAlchemy connection pool size.",
+    )
+    max_overflow: int = Field(
+        default=10,
+        description="Max connections above pool_size before blocking.",
+    )
+    pool_pre_ping: bool = Field(
+        default=True,
+        description="Test connections before checkout (detects stale PgBouncer connections).",
+    )
+    pool_recycle: int = Field(
+        default=3600,
+        description="Recycle connections after this many seconds.",
+    )
 
-    def _make_engine(self) -> "Engine":  # noqa: F821
-        """Build a SQLAlchemy engine bound to Django's default DB."""
+    def _make_engine(self, *, direct: bool = False) -> "Engine":  # noqa: F821
+        """Build a SQLAlchemy engine bound to Django's default DB.
+
+        When *direct* is True, bypasses PgBouncer by connecting to
+        POSTGRES_DIRECT_HOST/PORT. Use for COPY operations and other
+        session-level PostgreSQL features.
+        """
         import django
 
         if not django.apps.apps.ready:
@@ -131,12 +152,22 @@ class PostGISResource(ConfigurableResource):
         from sqlalchemy import create_engine
 
         db = settings.DATABASES["default"]
+        if direct:
+            host = settings.POSTGRES_DIRECT_HOST
+            port = settings.POSTGRES_DIRECT_PORT
+        else:
+            host = db["HOST"]
+            port = db.get("PORT", 5432)
         url = (
             f"postgresql+psycopg2://{db['USER']}:{db['PASSWORD']}"
-            f"@{db['HOST']}:{db.get('PORT', 5432)}/{db['NAME']}"
+            f"@{host}:{port}/{db['NAME']}"
         )
         return create_engine(
             url,
+            pool_size=self.pool_size,
+            max_overflow=self.max_overflow,
+            pool_pre_ping=self.pool_pre_ping,
+            pool_recycle=self.pool_recycle,
             connect_args={
                 "application_name": self.application_name,
                 "options": f"-c statement_timeout={self.statement_timeout_ms}",
@@ -161,11 +192,11 @@ class PostGISResource(ConfigurableResource):
     def raw_connection(self) -> Iterator:
         """Yield a raw psycopg2 connection for COPY operations.
 
-        The connection comes from a fresh SQLAlchemy engine's pool.
-        Caller is responsible for commit/rollback; the connection and
-        engine are cleaned up on context exit.
+        Uses a direct PostgreSQL connection (bypassing PgBouncer) because
+        COPY and other session-level features require a real server
+        connection, not a pooled one.
         """
-        engine = self._make_engine()
+        engine = self._make_engine(direct=True)
         conn = engine.raw_connection()
         try:
             yield conn

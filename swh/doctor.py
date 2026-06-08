@@ -52,13 +52,36 @@ def check_env_file() -> CheckResult:
     return CheckResult("env_file", Status.PASS, str(env_path))
 
 
+def check_pgbouncer() -> CheckResult:
+    """Verify PgBouncer is reachable and proxying connections."""
+    try:
+        from swh.config import settings
+
+        import psycopg2
+
+        conn = psycopg2.connect(settings.database.psycopg2_dsn, connect_timeout=5)
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT 1;")
+            cur.fetchone()
+            host = settings.database.host
+            port = settings.database.port
+            return CheckResult("pgbouncer", Status.PASS, f"{host}:{port}")
+        finally:
+            conn.close()
+    except ImportError:
+        return CheckResult("pgbouncer", Status.FAIL, "psycopg2 not installed")
+    except Exception as exc:
+        return CheckResult("pgbouncer", Status.WARN, f"not reachable: {exc}")
+
+
 def check_postgis_connection() -> CheckResult:
     try:
         from swh.config import settings
 
         import psycopg2
 
-        conn = psycopg2.connect(settings.database.psycopg2_dsn)
+        conn = psycopg2.connect(settings.database.direct_psycopg2_dsn, connect_timeout=5)
         try:
             cur = conn.cursor()
             cur.execute("SELECT PostGIS_Version();")
@@ -78,7 +101,7 @@ def check_postgis_extensions() -> CheckResult:
 
         import psycopg2
 
-        conn = psycopg2.connect(settings.database.psycopg2_dsn)
+        conn = psycopg2.connect(settings.database.direct_psycopg2_dsn, connect_timeout=5)
         try:
             cur = conn.cursor()
             cur.execute(
@@ -165,6 +188,7 @@ def check_migrations() -> CheckResult:
 ALL_CHECKS: list[Callable[[], CheckResult]] = [
     check_python_version,
     check_env_file,
+    check_pgbouncer,
     check_postgis_connection,
     check_postgis_extensions,
     check_redis,

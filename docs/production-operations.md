@@ -343,6 +343,54 @@ These are guidelines, not bright lines — your specific query patterns, hardwar
 
 ---
 
+## 11. Warehouse Observability
+
+**Decision:** How do you monitor materialization health, replication lag, and cross-tier parity?
+
+**Triggers:**
+- Materialization jobs complete but produce row-count mismatches between Delta Lake and PostGIS
+- Logical replication slots fall behind, causing stale downstream data
+- You need an audit trail of what was materialized, when, and whether it matched
+
+**Implementation:** SW ships three monitoring models in `warehouse/models/monitoring.py`:
+
+| Model | Table | Purpose |
+|---|---|---|
+| `MaterializationRecord` | `sw_monitoring_materialization` | Per-asset parity record after each PostGIS materialization |
+| `ReplicationLagSnapshot` | `sw_monitoring_replication_lag` | Periodic capture of logical replication slot lag |
+| `ParityCheck` | `sw_monitoring_parity_check` | Cross-tier row count reconciliation |
+
+`postgis_materialization_asset` automatically writes a `MaterializationRecord` after each successful write, capturing source/target row counts, duration, and the Dagster run ID. The `replication_lag_monitor` Dagster sensor polls `pg_replication_slots` every 60 seconds and writes `ReplicationLagSnapshot` rows.
+
+**SLO templates (adapt to your deployment):**
+
+| Metric | Target | Alert threshold | Query |
+|---|---|---|---|
+| Materialization parity | 100% `is_parity=True` | Any `is_parity=False` in the last 24h | `SELECT * FROM sw_monitoring_materialization WHERE NOT is_parity AND materialized_at > now() - interval '24 hours'` |
+| Replication lag | < 100 MB | `lag_bytes > 100000000` sustained for 5 min | `SELECT * FROM sw_monitoring_replication_lag WHERE lag_bytes > 100000000 AND captured_at > now() - interval '5 minutes'` |
+| Parity check pass rate | 100% `is_match=True` | Any `is_match=False` in the last check window | `SELECT * FROM sw_monitoring_parity_check WHERE NOT is_match AND checked_at > now() - interval '24 hours'` |
+
+**postgres_exporter integration:** If you run `postgres_exporter` for Prometheus/Grafana, add custom queries against the `sw_monitoring_*` tables to surface these metrics alongside standard PostgreSQL metrics. Example collector config:
+
+```yaml
+sw_materialization_mismatches:
+  query: "SELECT count(*) AS mismatch_count FROM sw_monitoring_materialization WHERE NOT is_parity AND materialized_at > now() - interval '1 hour'"
+  metrics:
+    - mismatch_count:
+        usage: "GAUGE"
+        description: "Materialization parity failures in the last hour"
+sw_replication_lag:
+  query: "SELECT slot_name, lag_bytes FROM sw_monitoring_replication_lag WHERE captured_at = (SELECT max(captured_at) FROM sw_monitoring_replication_lag)"
+  metrics:
+    - lag_bytes:
+        usage: "GAUGE"
+        description: "Latest replication lag in bytes per slot"
+```
+
+**Default-safe recommendation:** The monitoring tables and automated recording are enabled by default. For alerting, start with a simple Dagster sensor or cron job that checks for `is_parity=False` or `lag_bytes` above threshold and posts to your notification channel. Graduate to postgres_exporter + Grafana when you have a metrics stack.
+
+---
+
 ## Further Reading
 
 - [`docs/architecture.md`](architecture.md) — three-tier warehouse pattern, design-order constraints

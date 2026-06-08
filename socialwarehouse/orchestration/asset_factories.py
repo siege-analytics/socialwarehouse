@@ -215,11 +215,24 @@ def postgis_materialization_asset(
         t_total = t_write - t_start
         context.log.info("PostGIS write complete: %.1fs total", t_total)
 
+        target_row_count = _count_postgis_rows(table_name, postgis_resource)
+        _record_materialization(
+            asset_key=f"{source_layer}/{source_table}",
+            source_tier=source_layer,
+            target_table=table_name,
+            source_row_count=row_count,
+            target_row_count=target_row_count,
+            duration_seconds=round(t_total, 2),
+            dagster_run_id=context.run_id,
+        )
+
         return MaterializeResult(
             metadata={
                 "source_path": source_path,
                 "target_table": table_name,
                 "row_count": row_count,
+                "target_row_count": target_row_count,
+                "is_parity": row_count == target_row_count,
                 "write_method": write_method,
                 "copy_threshold": copy_threshold,
                 "timing_spark_read_s": round(t_spark - t_start, 2),
@@ -243,3 +256,43 @@ def _resolve_django_model(app_label: str, model_name: str):
     if not django.apps.apps.ready:
         django.setup()
     return django.apps.apps.get_model(app_label, model_name)
+
+
+def _count_postgis_rows(table_name: str, postgis_resource) -> int:
+    from sqlalchemy import text
+
+    with postgis_resource.engine() as engine:
+        with engine.connect() as conn:
+            result = conn.execute(text(f'SELECT count(*) FROM "{table_name}"'))
+            return result.scalar()
+
+
+def _record_materialization(
+    *,
+    asset_key: str,
+    source_tier: str,
+    target_table: str,
+    source_row_count: int,
+    target_row_count: int,
+    duration_seconds: float,
+    dagster_run_id: str,
+) -> None:
+    try:
+        import django
+
+        if not django.apps.apps.ready:
+            django.setup()
+        from socialwarehouse.warehouse.models.monitoring import MaterializationRecord
+
+        MaterializationRecord.objects.create(
+            asset_key=asset_key,
+            source_tier=source_tier,
+            target_table=target_table,
+            source_row_count=source_row_count,
+            target_row_count=target_row_count,
+            is_parity=(source_row_count == target_row_count),
+            duration_seconds=duration_seconds,
+            dagster_run_id=dagster_run_id,
+        )
+    except Exception:
+        pass

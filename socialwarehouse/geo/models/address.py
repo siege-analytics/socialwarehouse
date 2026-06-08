@@ -34,9 +34,7 @@ DEFAULT_CENSUS_YEAR = 2020
 
 # Canonical geocode source values, lowercase. Matches how SW's own
 # writers populate the field (see geocode_addresses.py: `addr.geocode_source
-# = "census"` / "nominatim"). The vendor GST submodule's tasks.py writes
-# Mixed Case ("Census") — that's a separate inconsistency to be cleaned up
-# vendor-side; out of scope for F7/SW#96.
+# = "census"` / "nominatim").
 #
 # Reading rows with values outside this set (legacy, vendor-written, or
 # any future addition) is not blocked — only future admin-form writes are

@@ -811,5 +811,83 @@ def reconcile_cmd(as_json, all_tables):
             sys.exit(1)
 
 
+@cli.command("tier-status")
+@click.option("--json", "as_json", is_flag=True, help="Output results as JSON")
+@click.option("--hot-window", type=int, default=1, help="Number of recent years considered 'hot' (default: 1)")
+def tier_status_cmd(as_json, hot_window):
+    """Show partition tier placement for partitioned fact tables.
+
+    Classifies each partition as hot, warm, or cold based on its range
+    boundary relative to the current year and flags partitions that
+    should be moved to a different tablespace.
+
+    Examples:
+        swh tier-status
+        swh tier-status --json
+        swh tier-status --hot-window 2
+    """
+    import json as json_mod
+
+    from swh.tiering import Tier, assess_tiers
+
+    dsn = settings.database.direct_psycopg2_dsn
+
+    try:
+        partitions = assess_tiers(dsn, hot_window=hot_window)
+    except Exception as exc:
+        click.echo(click.style(f"  [FAIL]  could not connect: {exc}", fg="red"), err=True)
+        sys.exit(1)
+
+    if as_json:
+        data = [
+            {
+                "parent_table": p.parent_table,
+                "partition": p.partition_name,
+                "tier": p.tier.value,
+                "range_start": p.range_start,
+                "range_end": p.range_end,
+                "tablespace": p.tablespace,
+                "recommended_tablespace": p.recommended_tablespace,
+                "needs_move": p.needs_move,
+                "size_bytes": p.size_bytes,
+                "size_pretty": p.size_pretty,
+                "index_count": p.index_count,
+                "is_default": p.is_default,
+            }
+            for p in partitions
+        ]
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo("Partition Tier Status")
+        click.echo("=" * 70)
+
+        if not partitions:
+            click.echo("  No partitioned fact tables found.")
+        else:
+            by_parent = {}
+            for p in partitions:
+                by_parent.setdefault(p.parent_table, []).append(p)
+
+            for parent in sorted(by_parent):
+                click.echo(f"\n  {parent}:")
+                for p in by_parent[parent]:
+                    tier_colors = {"hot": "red", "warm": "yellow", "cold": "cyan"}
+                    color = tier_colors[p.tier.value]
+                    range_str = f"{p.range_start} → {p.range_end}" if not p.is_default else "DEFAULT"
+                    move_flag = " ← MOVE" if p.needs_move else ""
+                    click.echo(
+                        click.style(f"    [{p.tier.value.upper():4s}]", fg=color)
+                        + f"  {p.partition_name} ({range_str}) {p.size_pretty}"
+                        + f" [{p.index_count} idx] @ {p.tablespace}"
+                        + click.style(move_flag, fg="red")
+                    )
+
+            needs_move = [p for p in partitions if p.needs_move]
+            if needs_move:
+                click.echo(f"\n  {len(needs_move)} partition(s) should be moved:")
+                for p in needs_move:
+                    click.echo(f"    ALTER TABLE {p.partition_name} SET TABLESPACE {p.recommended_tablespace};")
+
+
 if __name__ == "__main__":
     cli()

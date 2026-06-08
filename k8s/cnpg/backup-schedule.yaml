@@ -1,0 +1,13 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: socialwarehouse-daily-backup
+  labels:
+    app.kubernetes.io/name: socialwarehouse
+    app.kubernetes.io/component: backup
+spec:
+  schedule: "0 2 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: socialwarehouse-postgis
+  immediate: false

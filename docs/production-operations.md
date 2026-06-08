@@ -277,7 +277,24 @@ Install hydra_columnar when your warehouse exceeds 5 TB or 5 redistricting cycle
 
 **Default-safe recommendation:** Start with a streaming read replica for Django and API traffic (`DATABASES['readonly']`). For non-PostgreSQL consumers (search, graph, BI), read from Delta Lake directly — the data is already there in a format optimized for analytical access. Logical replication and CDC are powerful but operationally expensive; defer until you have a concrete freshness requirement that batch can't meet.
 
-**Implementation pointer:** Read replica setup is part of your HA topology (see §1). Django database routing is a settings change (`DATABASE_ROUTERS`). Delta Lake access is already built into SW's architecture.
+**Implementation:** SW ships reference configurations for four spawn types in `k8s/spawns/`:
+
+| Spawn type | File | Mechanism | Refresh |
+|---|---|---|---|
+| Web OLTP | `logical-replication.sql` | Logical replication publications | Near-real-time |
+| Analytical DB | `pg-dump-partition.sh` | Per-partition pg_dump/restore | Nightly/on-demand |
+| OpenSearch | `debezium-connector.json` | Debezium CDC via Kafka | Real-time |
+| Neo4j | `neo4j-import.cypher` | APOC JDBC import | Nightly/on-demand |
+
+**Web OLTP spawn (logical replication):** Run `logical-replication.sql` on the primary to create publications. Dimension tables (`sw_dim_*`) are published by default; add fact tables if your web app needs them. Create a subscription on the downstream instance pointing to the publication.
+
+**Analytical spawn (pg_dump by partition):** `pg-dump-partition.sh` dumps specific partitions (leveraging §4 partitioning) and restores to a target DB. Includes row-count parity verification. Use for per-engagement or per-cycle snapshots.
+
+**OpenSearch spawn (Debezium CDC):** Register `debezium-connector.json` with Kafka Connect. The connector captures changes from specified tables and publishes to Kafka topics. Pair with the OpenSearch Sink Connector for indexing.
+
+**Neo4j spawn (graph import):** `neo4j-import.cypher` imports persons, geographies, and vote relationships via APOC JDBC. Run nightly or after materialization. Includes parity verification queries.
+
+**Parity monitoring:** All spawn types should verify row counts against the hub. Use the `ParityCheck` model from §11 to record and alert on mismatches. The `pg-dump-partition.sh` script includes built-in parity checks; for other spawns, schedule periodic count comparisons.
 
 ---
 

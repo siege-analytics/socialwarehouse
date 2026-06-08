@@ -1,0 +1,35 @@
+{
+  "name": "sw-opensearch-cdc",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "primary-host",
+    "database.port": "5432",
+    "database.user": "debezium",
+    "database.password": "${DEBEZIUM_DB_PASSWORD}",
+    "database.dbname": "socialwarehouse",
+    "database.server.name": "socialwarehouse",
+    "plugin.name": "pgoutput",
+    "publication.name": "sw_full",
+    "slot.name": "sw_debezium_opensearch",
+
+    "table.include.list": "public.sw_dim_person,public.sw_dim_geography,public.sw_fact_vote_history,public.sw_fact_person_score",
+
+    "transforms": "route",
+    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.route.regex": "socialwarehouse\\.public\\.(.*)",
+    "transforms.route.replacement": "sw-$1",
+
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": false,
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": false,
+
+    "topic.prefix": "sw-cdc",
+    "heartbeat.interval.ms": 10000,
+    "snapshot.mode": "initial",
+
+    "_comment_setup": "Register via: curl -X POST http://kafka-connect:8083/connectors -H 'Content-Type: application/json' -d @debezium-connector.json",
+    "_comment_opensearch": "Use OpenSearch Sink Connector to consume topics: sw-cdc.public.sw_dim_person, etc.",
+    "_comment_monitoring": "Monitor connector lag via Kafka Connect REST API: GET /connectors/sw-opensearch-cdc/status"
+  }
+}

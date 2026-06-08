@@ -643,5 +643,83 @@ def doctor(as_json, verbose):
             sys.exit(1)
 
 
+@cli.command("audit-indexes")
+@click.option("--json", "as_json", is_flag=True, help="Output results as JSON")
+@click.option("--bloat-threshold", type=float, default=50.0, help="Bloat percentage threshold (default: 50)")
+@click.option("--min-size-mb", type=float, default=1.0, help="Minimum index size in MB to report (default: 1)")
+def audit_indexes_cmd(as_json, bloat_threshold, min_size_mb):
+    """Audit PostGIS indexes for unused, duplicate, and bloated entries.
+
+    Connects directly to PostgreSQL (bypassing PgBouncer) and queries
+    pg_stat_user_indexes and pg_index catalog views.
+
+    Examples:
+        swh audit-indexes
+        swh audit-indexes --json
+        swh audit-indexes --bloat-threshold 30 --min-size-mb 10
+    """
+    import json as json_mod
+
+    from swh.audit_indexes import Finding, audit_indexes, pretty_size
+
+    dsn = settings.database.direct_psycopg2_dsn
+    min_size_bytes = int(min_size_mb * 1024 * 1024)
+
+    try:
+        issues = audit_indexes(
+            dsn,
+            bloat_threshold_pct=bloat_threshold,
+            min_size_bytes=min_size_bytes,
+        )
+    except Exception as exc:
+        click.echo(click.style(f"  [FAIL]  could not connect: {exc}", fg="red"), err=True)
+        sys.exit(1)
+
+    if as_json:
+        data = [
+            {
+                "finding": i.finding.value,
+                "schema": i.schema_name,
+                "table": i.table_name,
+                "index": i.index_name,
+                "size_bytes": i.index_size_bytes,
+                "size_pretty": i.index_size_pretty,
+                "detail": i.detail,
+                "recommendation": i.recommendation,
+            }
+            for i in issues
+        ]
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo("Index Audit")
+        click.echo("=" * 60)
+
+        if not issues:
+            click.echo(click.style("  No issues found.", fg="green"))
+        else:
+            for finding_type in Finding:
+                group = [i for i in issues if i.finding == finding_type]
+                if not group:
+                    continue
+                color = {"unused": "yellow", "duplicate": "red", "bloated": "cyan"}[finding_type.value]
+                click.echo(f"\n  {finding_type.value.upper()} ({len(group)}):")
+                for i in group:
+                    click.echo(
+                        click.style(f"    [{finding_type.value.upper()}]", fg=color)
+                        + f"  {i.index_name} on {i.table_name} ({i.index_size_pretty})"
+                    )
+                    click.echo(f"           {i.detail}")
+                    click.echo(click.style(f"           → {i.recommendation}", fg="white"))
+
+        total_waste = sum(i.index_size_bytes for i in issues)
+        if total_waste > 0:
+            click.echo(f"\n  {len(issues)} issue(s), ~{pretty_size(total_waste)} reclaimable")
+        else:
+            click.echo(f"\n  {len(issues)} issue(s)")
+
+        if any(i.finding == Finding.UNUSED for i in issues):
+            sys.exit(1)
+
+
 if __name__ == "__main__":
     cli()

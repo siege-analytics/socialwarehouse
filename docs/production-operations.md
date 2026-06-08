@@ -82,7 +82,33 @@ Each section follows the same structure:
 
 **Default-safe recommendation:** PgBouncer in transaction mode for Django/Celery traffic. Spark and Dagster typically open fewer, longer-lived connections — route them directly to PostgreSQL (or through a separate PgBouncer instance in session mode) to avoid prepared-statement conflicts.
 
-**Implementation pointer:** PgBouncer deployment lives in your infrastructure repo. SW's Django settings use standard `DATABASES` configuration; point `HOST` at PgBouncer instead of directly at PostgreSQL.
+**Implementation:** SW ships a PgBouncer service in `docker-compose.yml` (transaction mode, enabled by default). Applications connect via `POSTGRES_HOST=pgbouncer` + `POSTGRES_PORT=6432`. Direct PostgreSQL access is preserved via `POSTGRES_DIRECT_HOST`/`POSTGRES_DIRECT_PORT` for COPY operations and migrations. Configuration lives in `docker/pgbouncer/pgbouncer.ini`.
+
+Key PgBouncer settings (tune for your deployment):
+
+| Parameter | Default | Production guidance |
+|---|---|---|
+| `default_pool_size` | 25 | Set to `max_connections / expected_distinct_users` |
+| `max_client_conn` | 400 | Sum of all Django workers + Celery workers + Dagster ops + headroom |
+| `min_pool_size` | 5 | Avoids cold-start latency for bursty workloads |
+| `reserve_pool_size` | 5 | Emergency overflow; fires after `reserve_pool_timeout` seconds |
+
+**PostgreSQL memory tuning profiles:**
+
+| Parameter | Dev (4 GB) | Staging (16 GB) | Production (128 GB+) |
+|---|---|---|---|
+| `shared_buffers` | 1 GB | 4 GB | 32 GB |
+| `effective_cache_size` | 3 GB | 12 GB | 96 GB |
+| `work_mem` | 16 MB | 64 MB | 256 MB |
+| `maintenance_work_mem` | 256 MB | 1 GB | 4 GB |
+| `wal_buffers` | 16 MB | 64 MB | 256 MB |
+| `max_connections` | 100 | 200 | 300 |
+| `max_wal_size` | 2 GB | 8 GB | 16 GB |
+| `checkpoint_completion_target` | 0.9 | 0.9 | 0.9 |
+| `random_page_cost` | 1.1 | 1.1 | 1.1 |
+| `effective_io_concurrency` | 200 | 200 | 200 |
+
+To apply: mount a custom `postgresql.conf` via Docker volume or pass parameters via the `postgis` service's `command:` list. The Docker Compose `postgis` service already demonstrates this pattern with `pg_hba.conf`.
 
 ---
 

@@ -36,11 +36,13 @@ class DatabaseSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="POSTGRES_", env_file=".env")
 
-    host: str = "postgis"
-    port: int = 5432
+    host: str = "pgbouncer"
+    port: int = 6432
     db: str = "gis"
     user: str = "socialwarehouse"
     password: str = "CHANGEME"
+    direct_host: str = "postgis"
+    direct_port: int = 5432
 
     @property
     def connection_string(self) -> str:
@@ -73,6 +75,11 @@ class DatabaseSettings(BaseSettings):
             'host=postgis port=5432 dbname=gis user=socialwarehouse password=CHANGEME'
         """
         return f"host={self.host} port={self.port} dbname={self.db} user={self.user} password={self.password}"
+
+    @property
+    def direct_psycopg2_dsn(self) -> str:
+        """DSN for direct PostgreSQL connection (bypassing PgBouncer)."""
+        return f"host={self.direct_host} port={self.direct_port} dbname={self.db} user={self.user} password={self.password}"
 
 
 class CensusSettings(BaseSettings):

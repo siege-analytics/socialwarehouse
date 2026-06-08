@@ -41,6 +41,31 @@ services:
       retries: 5
 
   # ---------------------------------------------------------------------------
+  # PgBouncer — connection pooler (transaction mode)
+  # ---------------------------------------------------------------------------
+  pgbouncer:
+    build:
+      context: docker/pgbouncer
+    env_file: .env
+    environment:
+      - POSTGRES_DIRECT_HOST=postgis
+      - POSTGRES_DIRECT_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "${PGBOUNCER_PORT:-6432}:6432"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
   # Redis — Celery broker + result backend
   # ---------------------------------------------------------------------------
   redis:
@@ -69,7 +94,10 @@ services:
       - DJANGO_SETTINGS_MODULE=socialwarehouse.settings.development
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - POSTGRES_HOST=postgis
+      - POSTGRES_HOST=pgbouncer
+      - POSTGRES_PORT=6432
+      - POSTGRES_DIRECT_HOST=postgis
+      - POSTGRES_DIRECT_PORT=5432
     command: >
       bash -c "
         pip install -e /opt/social_warehouse/ --quiet &&
@@ -81,7 +109,7 @@ services:
     volumes:
       - .:/opt/social_warehouse/
     depends_on:
-      postgis:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -96,7 +124,10 @@ services:
       - DJANGO_SETTINGS_MODULE=socialwarehouse.settings.development
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - POSTGRES_HOST=postgis
+      - POSTGRES_HOST=pgbouncer
+      - POSTGRES_PORT=6432
+      - POSTGRES_DIRECT_HOST=postgis
+      - POSTGRES_DIRECT_PORT=5432
     command: >
       bash -c "
         pip install -e /opt/social_warehouse/ --quiet &&
@@ -105,7 +136,7 @@ services:
     volumes:
       - .:/opt/social_warehouse/
     depends_on:
-      postgis:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -126,11 +157,14 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=socialwarehouse.settings.development
       - CELERY_BROKER_URL=redis://redis:6379/0
-      - POSTGRES_HOST=postgis
+      - POSTGRES_HOST=pgbouncer
+      - POSTGRES_PORT=6432
+      - POSTGRES_DIRECT_HOST=postgis
+      - POSTGRES_DIRECT_PORT=5432
     volumes:
       - .:/opt/social_warehouse/
     depends_on:
-      postgis:
+      pgbouncer:
         condition: service_healthy
       neo4j:
         condition: service_healthy

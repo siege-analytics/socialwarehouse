@@ -1,0 +1,76 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: socialwarehouse-postgis
+  labels:
+    app.kubernetes.io/name: socialwarehouse
+    app.kubernetes.io/component: database
+spec:
+  instances: 3
+
+  imageName: ghcr.io/cloudnative-pg/postgis:16-3.4
+
+  postgresql:
+    parameters:
+      shared_buffers: "4GB"
+      effective_cache_size: "12GB"
+      work_mem: "64MB"
+      maintenance_work_mem: "1GB"
+      wal_buffers: "64MB"
+      max_connections: "200"
+      max_wal_size: "8GB"
+      checkpoint_completion_target: "0.9"
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      shared_preload_libraries: "pg_stat_statements"
+    pg_hba:
+      - host all all 0.0.0.0/0 scram-sha-256
+
+  bootstrap:
+    initdb:
+      database: socialwarehouse
+      owner: socialwarehouse
+      postInitSQL:
+        - CREATE EXTENSION IF NOT EXISTS postgis;
+        - CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+  storage:
+    size: 100Gi
+    storageClass: gp3
+
+  walStorage:
+    size: 20Gi
+    storageClass: gp3
+
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://socialwarehouse-backups/wal/
+      endpointURL: http://minio:9000
+      s3Credentials:
+        accessKeyId:
+          name: minio-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: minio-credentials
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+        maxParallel: 4
+      data:
+        compression: gzip
+    retentionPolicy: "14d"
+
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+
+  resources:
+    requests:
+      memory: "8Gi"
+      cpu: "2"
+    limits:
+      memory: "16Gi"
+      cpu: "4"
+
+  monitoring:
+    enablePodMonitor: true

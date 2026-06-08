@@ -34,7 +34,13 @@ Each section follows the same structure:
 
 **Default-safe recommendation:** Start with a single pod until your data volume or uptime requirements force the conversation. When you're ready, CNPG primary + 1 standby + WAL archiving to object storage is the lowest-friction Kubernetes path. If you're not on Kubernetes, a managed PostgreSQL service with PostGIS support is the pragmatic choice.
 
-**Implementation pointer:** HA topology lives in your infrastructure repo (Helm charts, Terraform, ArgoCD manifests) — not in SocialWarehouse. SW's `docker-compose.yml` is a dev convenience; production topology is the adopter's concern.
+**Implementation:** SW ships CNPG (CloudNativePG) manifests in `k8s/cnpg/` as the recommended Kubernetes path:
+
+- `cluster.yaml`: 3-instance Cluster (1 primary + 2 standbys) with PostGIS 16-3.4
+- `backup-schedule.yaml`: daily base backups at 02:00 UTC, 14-day retention
+- `minio.yaml`: MinIO for dev/test WAL archiving (replace with real S3/GCS in production)
+
+See `k8s/cnpg/README.md` for prerequisites, quick-start, and production customization. The `docker-compose.yml` single-node setup remains the dev convenience; CNPG is the production path for Kubernetes adopters. Non-Kubernetes adopters should use Patroni or a managed PostgreSQL service.
 
 ---
 
@@ -58,7 +64,13 @@ Each section follows the same structure:
 
 **Default-safe recommendation:** WAL archiving to S3-compatible storage + daily base backups via pgBackRest + 14-day retention. Test a restore before you need one — an untested backup is not a backup.
 
-**Implementation pointer:** Backup configuration belongs in your infrastructure repo. If using CNPG, backup is declarative in the Cluster CRD. If managing PostgreSQL directly, pgBackRest config lives alongside your PostgreSQL configuration.
+**Implementation:** If using CNPG (see §1), backup is declarative:
+
+- WAL archiving: configured in `k8s/cnpg/cluster.yaml` under `spec.backup.barmanObjectStore`
+- Scheduled base backups: `k8s/cnpg/backup-schedule.yaml` (daily at 02:00 UTC, 14-day retention)
+- PITR: create a recovery Cluster CRD pointing to the WAL archive with a `recoveryTarget.targetTime` (see `k8s/cnpg/README.md` for a full example)
+
+If managing PostgreSQL directly (non-CNPG), pgBackRest config lives alongside your PostgreSQL configuration in your infrastructure repo.
 
 ---
 

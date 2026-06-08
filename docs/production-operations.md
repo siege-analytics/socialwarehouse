@@ -205,7 +205,54 @@ CREATE TABLE sw_fact_vote_history_2027
 
 **Default-safe recommendation:** The simplest path for SW adopters: historical data that's past your active query window already exists in Delta Lake (tier 1 of the warehouse). Stop materializing it to PostGIS. PostGIS holds the hot window; Delta holds everything. When you need historical data, query it via Spark. No columnar extensions, no partition gymnastics — just stop pushing old data into the serving tier.
 
-**Implementation pointer:** Adjust your Dagster asset graph or materialization jobs to only materialize recent data into PostGIS. The Delta tables remain the source of truth for historical queries.
+**Implementation:** SW ships a three-tier model for partitioned fact tables:
+
+| Tier | Tablespace | Indexes | Partitions |
+|---|---|---|---|
+| Hot | `pg_default` (NVMe) | Full indexes | Current + previous cycle/year |
+| Warm | `warm_ts` (SSD) | Reduced (non-essential dropped) | N-2 through N-5 |
+| Cold | `cold_ts` (HDD/columnar) | Minimal (PK only) | Older than N-5 |
+
+**Tablespace setup (host-specific — run once per deployment):**
+
+```sql
+-- Create tablespaces pointing to your storage mount points
+CREATE TABLESPACE warm_ts LOCATION '/mnt/ssd/pg_warm';
+CREATE TABLESPACE cold_ts LOCATION '/mnt/hdd/pg_cold';
+```
+
+**Tier assessment and advancement:**
+
+- `swh tier-status` shows current partition placement vs recommended tier
+- `swh tier-status --json` for machine-readable output
+- The `tier_advancement_monitor` Dagster sensor runs daily and logs recommendations for misplaced partitions
+
+**Moving a partition to a different tier:**
+
+```sql
+ALTER TABLE sw_fact_vote_history_2018 SET TABLESPACE warm_ts;
+```
+
+**Index reduction for warm partitions:**
+
+```sql
+-- Drop non-essential indexes on warm/cold partitions
+-- Keep only primary key and unique constraints
+DROP INDEX CONCURRENTLY idx_vote_history_2018_person_date;
+```
+
+**hydra_columnar for cold tier (optional):**
+
+```sql
+CREATE EXTENSION IF NOT EXISTS columnar;
+
+-- Convert a cold partition to columnar storage
+SELECT columnar.alter_table_set_access_method('sw_fact_vote_history_2016', 'columnar');
+```
+
+Install hydra_columnar when your warehouse exceeds 5 TB or 5 redistricting cycles. Below that threshold, the three-tier tablespace model is sufficient.
+
+**Decision trigger:** if warehouse > 5 TB or > 5 cycles, install columnar. Below that, the simplest approach remains "stop materializing old data to PostGIS" and query historical data via Delta Lake/Spark.
 
 ---
 

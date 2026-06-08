@@ -130,4 +130,45 @@ def replication_lag_sensor(context: SensorEvaluationContext) -> SensorResult:
         return SensorResult(skip_reason=SkipReason(f"probe failed: {exc}"))
 
 
-all_sensors = [bronze_addresses_sensor, replication_lag_sensor]
+@sensor(
+    name="tier_advancement_monitor",
+    description="Check partition tier placement and log recommendations for misplaced partitions.",
+    minimum_interval_seconds=86400,
+)
+def tier_advancement_sensor(context: SensorEvaluationContext) -> SensorResult:
+    try:
+        from swh.config import settings as swh_settings
+        from swh.tiering import assess_tiers
+
+        dsn = swh_settings.database.direct_psycopg2_dsn
+        partitions = assess_tiers(dsn, hot_window=1)
+        needs_move = [p for p in partitions if p.needs_move]
+
+        if not needs_move:
+            return SensorResult(
+                skip_reason=SkipReason(f"all {len(partitions)} partitions correctly placed")
+            )
+
+        for p in needs_move:
+            context.log.warning(
+                "Partition %s (%s) is on tablespace '%s' but should be on '%s'. "
+                "Run: ALTER TABLE %s SET TABLESPACE %s;",
+                p.partition_name, p.tier.value, p.tablespace,
+                p.recommended_tablespace, p.partition_name, p.recommended_tablespace,
+            )
+
+        return SensorResult(
+            skip_reason=SkipReason(
+                f"{len(needs_move)} partition(s) need tier advancement (logged recommendations)"
+            )
+        )
+
+    except ImportError as exc:
+        context.log.warning("tier_advancement_sensor: missing dependency: %s", exc)
+        return SensorResult(skip_reason=SkipReason(f"missing dependency: {exc}"))
+    except Exception as exc:
+        context.log.warning("tier_advancement_sensor failed: %s", exc)
+        return SensorResult(skip_reason=SkipReason(f"probe failed: {exc}"))
+
+
+all_sensors = [bronze_addresses_sensor, replication_lag_sensor, tier_advancement_sensor]

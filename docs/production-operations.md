@@ -133,7 +133,43 @@ To apply: mount a custom `postgresql.conf` via Docker volume or pass parameters 
 
 **Default-safe recommendation:** Start without partitioning — PostgreSQL handles large tables well with proper indexes. When a specific table hits the triggers above, partition by the dimension that most closely matches your query patterns (usually time-based). Add jurisdiction sub-partitioning only if your queries are consistently state-scoped and the partition count stays manageable (rule of thumb: under 500 partitions per table).
 
-**Implementation pointer:** Partitioning is a PostgreSQL DDL concern. Implement via Django migrations (using `RunSQL` for `CREATE TABLE ... PARTITION BY`) or raw SQL in your infrastructure provisioning. SW's Django models don't need to change — Django 5.x works transparently with partitioned tables.
+**Implementation:** SW ships migration `0006_partition_fact_tables` which partitions three high-volume tables:
+
+| Table | Partition Key | Range |
+|---|---|---|
+| `sw_fact_redistricting_plan` | `cycle_id` | Per redistricting cycle (10-year) |
+| `sw_fact_vote_history` | `election_date` | Per calendar year (2016-2026) |
+| `sw_fact_person_score` | `scored_at` | Per calendar year (2020-2027) |
+
+Each table gets a `DEFAULT` partition as a safety net. Future partitions can be created manually or via pg_partman.
+
+**pg_partman setup (production):**
+
+```sql
+CREATE EXTENSION pg_partman;
+
+SELECT partman.create_parent(
+    p_parent_table := 'public.sw_fact_vote_history',
+    p_control := 'election_date',
+    p_type := 'range',
+    p_interval := '1 year',
+    p_premake := 2
+);
+```
+
+This auto-creates partitions 2 years ahead. Run `partman.run_maintenance()` on a schedule (daily cron or Dagster sensor) to create forward partitions and optionally detach old ones.
+
+**Adding partitions manually (without pg_partman):**
+
+```sql
+CREATE TABLE sw_fact_vote_history_2027
+    PARTITION OF sw_fact_vote_history
+    FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');
+```
+
+**Non-FEC adopters:** The cycle concept is domain-specific. Electoral warehouses use redistricting cycles; fiscal warehouses might use fiscal years; environmental warehouses might use monitoring periods. The partition key should match your domain's natural lifecycle boundary. Update the migration's partition ranges to match your domain.
+
+**Not yet partitioned:** FactACSEstimate, FactDecennialCount, FactUrbanicity, FactElectionResult, FactPrecinctResult. These can be partitioned when they hit the triggers above — follow the same `RunSQL` migration pattern.
 
 ---
 

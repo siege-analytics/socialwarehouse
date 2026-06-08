@@ -721,5 +721,95 @@ def audit_indexes_cmd(as_json, bloat_threshold, min_size_mb):
             sys.exit(1)
 
 
+@cli.command("reconcile")
+@click.option("--json", "as_json", is_flag=True, help="Output results as JSON")
+@click.option("--all-tables", is_flag=True, help="Check all tables, not just sw_* prefixed")
+def reconcile_cmd(as_json, all_tables):
+    """Diff live PG schema against Django models and report mismatches.
+
+    Compares column names, types, and nullability for SW tables (or all
+    tables with --all-tables). Report-only — no mutations.
+
+    Examples:
+        swh reconcile
+        swh reconcile --json
+        swh reconcile --all-tables
+    """
+    import json as json_mod
+
+    from swh.reconcile import DiffKind, reconcile
+
+    dsn = settings.database.direct_psycopg2_dsn
+
+    try:
+        report = reconcile(dsn, sw_only=not all_tables)
+    except Exception as exc:
+        click.echo(click.style(f"  [FAIL]  could not connect: {exc}", fg="red"), err=True)
+        sys.exit(1)
+
+    if as_json:
+        data = {
+            "table_diffs": [
+                {"table": d.table, "kind": d.kind.value, "detail": d.detail}
+                for d in report.table_diffs
+            ],
+            "column_diffs": [
+                {
+                    "table": d.table,
+                    "column": d.column,
+                    "kind": d.kind.value,
+                    "model_type": d.model_type,
+                    "db_type": d.db_type,
+                    "detail": d.detail,
+                }
+                for d in report.column_diffs
+            ],
+            "issue_count": report.issue_count,
+        }
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo("Schema Reconciliation")
+        click.echo("=" * 60)
+
+        if not report.has_issues:
+            click.echo(click.style("  No schema drift detected.", fg="green"))
+        else:
+            if report.table_diffs:
+                click.echo("\n  TABLE-LEVEL:")
+                for d in report.table_diffs:
+                    color = "red" if d.kind == DiffKind.MISSING_TABLE else "yellow"
+                    click.echo(
+                        click.style(f"    [{d.kind.value}]", fg=color)
+                        + f"  {d.table}: {d.detail}"
+                    )
+
+            if report.column_diffs:
+                by_table = {}
+                for d in report.column_diffs:
+                    by_table.setdefault(d.table, []).append(d)
+
+                click.echo("\n  COLUMN-LEVEL:")
+                for table in sorted(by_table):
+                    click.echo(f"\n    {table}:")
+                    for d in by_table[table]:
+                        colors = {
+                            DiffKind.MISSING_IN_DB: "red",
+                            DiffKind.EXTRA_IN_DB: "yellow",
+                            DiffKind.TYPE_MISMATCH: "red",
+                            DiffKind.NULLABLE_MISMATCH: "cyan",
+                        }
+                        color = colors.get(d.kind, "white")
+                        click.echo(
+                            click.style(f"      [{d.kind.value}]", fg=color)
+                            + f"  {d.column}: {d.detail}"
+                        )
+
+        click.echo(f"\n  {report.issue_count} issue(s)")
+
+        if any(d.kind == DiffKind.MISSING_IN_DB for d in report.column_diffs) or \
+           any(d.kind == DiffKind.MISSING_TABLE for d in report.table_diffs):
+            sys.exit(1)
+
+
 if __name__ == "__main__":
     cli()

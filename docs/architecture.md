@@ -105,7 +105,7 @@ SW canonical supports adopters whose source data carries multi-source provenance
 |---|---|---|---|
 | `Agent` | Identity hub for actors | `Person`, `Committee`, `Organization` (domain-app detail rows) | Landed (SW#348) |
 | `Event` | Canonicalization hub for events | `Transaction` (Contribution / Expenditure / Transfer / Obligation), and future siblings (election, disaster) | Planned (SW#349) |
-| `Attestation` | Multi-source provenance / canonical-truth records | `FECAttestation` first; entity-resolution attestation a future sibling | Planned (SW#350) |
+| `Attestation` | Multi-source provenance / canonical-truth records | `FECAttestation` first; entity-resolution attestation a future sibling | Landed (SW#350) |
 
 `core/` holds the polymorphic **bases only**; concrete subtype detail lives in the domain apps. This keeps the canonical-truth abstractions in one place while letting each domain own its specific columns.
 
@@ -122,6 +122,23 @@ SW canonical supports adopters whose source data carries multi-source provenance
 Concrete subtypes inherit `core.AgentSubtype`, an abstract base that adds a **nullable** one-to-one `agent` link. `Person` is a new SW model; `Committee` and `Organization` gain the link without disturbing their existing tables. The link is nullable so the introducing migration is forward-only and backward-compatible — existing rows are valid unlinked and can be backfilled incrementally.
 
 `Agent.get_subtype_instance()` dispatches on `subtype` to the matching detail row (or `None` when unlinked). This mirrors the electinfo `enterprise.agents` actor hub, where many incoming FKs target a single polymorphic actor id.
+
+### Attestation supertype (SW#350)
+
+`core.Attestation` (table `sw_attestation`) records multi-source-provenance observations of a canonical entity — "as of this source, parsed this way, the entity looked like this." Many attestations accumulate per entity (the electinfo FEC data carries hundreds per filing); the `is_canonical=True` row is the warehouse's current truth.
+
+Polymorphic target without a Django `GenericForeignKey`:
+
+- `entity_id` + `entity_subtype` — the attested entity's `entity_uuid` and its kind (`agent`, `committee`, `event`, `filing`, `address`, ...). `entity_subtype` is an open vocabulary; adopters attach attestations to their own kinds.
+- `attestation_kind` — the subclass discriminator (`fec`, `entity_resolution`, ...).
+- `attested_values` (JSON) + `attested_values_hash`, `attested_at`, `attested_by`, `attestation_source_tier`, `sequence`, `is_canonical`.
+- `entity_uuid` (own artifact id) is a UUID4 — distinct from `entity_id` (the attested target). The two must not be confused.
+
+A **partial unique constraint** (`uq_attestation_canonical_per_entity_kind`) enforces at most one canonical attestation per `(entity_id, entity_subtype, attestation_kind)`. Amendment is supersession: clear the old canonical, write a new canonical row at the next `sequence`.
+
+Lookup helpers — `Attestation.for_entity(...)`, `Attestation.canonical_for(...)`, and `attestation.get_entity()` (resolves the target row via `ENTITY_SUBTYPE_MODELS`; raises `LookupError` for an unregistered kind) — give explicit, integrity-safe access in place of a GFK.
+
+**`FECAttestation`** is the first concrete kind, a Django **multi-table-inheritance** child (table `sw_fec_attestation`) adding FEC-form provenance (`source_artifact_hash`, `source_artifact_id`, `parser_version`, `fec_form_type`, `fec_form_version`) and defaulting `attestation_kind` to `fec`. Future kinds (e.g. `EntityResolutionAttestation`) attach to the same superclass and may relocate to domain apps as the taxonomy grows.
 
 ## Cross-references
 

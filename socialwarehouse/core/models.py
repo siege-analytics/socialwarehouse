@@ -4,6 +4,10 @@ from django.db import models
 from django.utils import timezone
 
 from socialwarehouse.core.agent import Agent, AgentSubtype  # noqa: F401
+from socialwarehouse.core.attestation import (  # noqa: F401
+    Attestation,
+    FECAttestation,
+)
 
 
 class EntityIdentifier(models.Model):

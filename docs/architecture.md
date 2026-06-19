@@ -140,6 +140,18 @@ Lookup helpers — `Attestation.for_entity(...)`, `Attestation.canonical_for(...
 
 **`FECAttestation`** is the first concrete kind, a Django **multi-table-inheritance** child (table `sw_fec_attestation`) adding FEC-form provenance (`source_artifact_hash`, `source_artifact_id`, `parser_version`, `fec_form_type`, `fec_form_version`) and defaulting `attestation_kind` to `fec`. Future kinds (e.g. `EntityResolutionAttestation`) attach to the same superclass and may relocate to domain apps as the taxonomy grows.
 
+### Attestation variant-linking shapes (SW#351)
+
+Entity families link to `Attestation` in three different shapes, each shipped as an **abstract base class** in `core/`. SW ships no concrete subclass — adopters subclass per entity type in their own app, so there are no template-side tables or migrations.
+
+| Base | Shape | When to use | Adopter example |
+|---|---|---|---|
+| `AttestationSubtypeLink` | `(attestation, entity_subtype, source_type)` | A polymorphic Attestation indexes a typed subtype detail row | `CommitteeAttestationLink` |
+| `AttestationJunction` | `(entity_fk [adopter], attestation)` | Plain many-to-many: an entity has many attestations and vice versa | `FilingAttestationLink` |
+| `ResolutionAttestation` | `raw_input` + `resolved_*` + `resolution_*` | The row records RAW input, the RESOLVED canonical target, and resolution metadata (status, confidence, resolver, run) | `AddressResolutionAttestation` |
+
+The junction and subtype-link bases supply the `Attestation` FK (with a `%(class)s` reverse accessor); the adopter adds the entity side. `ResolutionAttestation` is the genuinely different shape — it is not "link entity to attestation" but "record how a raw input resolved to a canonical entity," with an `is_resolved` convenience property.
+
 ## Cross-references
 
 - Initiative SW#284 (General Civic Ontology) — design doc: [`docs/designs/ontology.md`](designs/ontology.md).

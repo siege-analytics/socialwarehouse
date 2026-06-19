@@ -8,6 +8,11 @@ from socialwarehouse.core.attestation import (  # noqa: F401
     Attestation,
     FECAttestation,
 )
+from socialwarehouse.core.attestation_links import (  # noqa: F401
+    AttestationJunction,
+    AttestationSubtypeLink,
+    ResolutionAttestation,
+)
 
 
 class EntityIdentifier(models.Model):

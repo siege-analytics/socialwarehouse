@@ -104,10 +104,12 @@ SW canonical supports adopters whose source data carries multi-source provenance
 | Supertype | Role | Subtypes | Status |
 |---|---|---|---|
 | `Agent` | Identity hub for actors | `Person`, `Committee`, `Organization` (domain-app detail rows) | Landed (SW#348) |
-| `Event` | Canonicalization hub for events | `Transaction` (Contribution / Expenditure / Transfer / Obligation), and future siblings (election, disaster) | Planned (SW#349) |
+| `Event` | Canonicalization hub for events | `Transaction` (Contribution / Expenditure / Transfer / Obligation), alongside the existing Corporate / SpatioTemporal / Electoral subtypes | Landed (SW#349, in `events/`) |
 | `Attestation` | Multi-source provenance / canonical-truth records | `FECAttestation` first; entity-resolution attestation a future sibling | Landed (SW#350) |
 
 `core/` holds the polymorphic **bases only**; concrete subtype detail lives in the domain apps. This keeps the canonical-truth abstractions in one place while letting each domain own its specific columns.
+
+**Placement note (pragmatic, not symmetric).** `Agent` and `Attestation` are new constructs, so they land in `core/`. `Event` already existed in `events/` as the shared event query surface that ties the ontology together; SW#349 extended it in place rather than moving the model across apps (a model relocation would risk the migration on a load-bearing table). So the canonical-truth layer is `Agent` + `Attestation` in `core/` and `Event` in `events/` — the architecture documents the lower-risk choice over the symmetric one.
 
 ### Agent supertype (SW#348)
 
@@ -151,6 +153,20 @@ Entity families link to `Attestation` in three different shapes, each shipped as
 | `ResolutionAttestation` | `raw_input` + `resolved_*` + `resolution_*` | The row records RAW input, the RESOLVED canonical target, and resolution metadata (status, confidence, resolver, run) | `AddressResolutionAttestation` |
 
 The junction and subtype-link bases supply the `Attestation` FK (with a `%(class)s` reverse accessor); the adopter adds the entity side. `ResolutionAttestation` is the genuinely different shape — it is not "link entity to attestation" but "record how a raw input resolved to a canonical entity," with an `is_resolved` convenience property.
+
+### Event supertype + canonicalization (SW#349)
+
+`events.Event` (table `sw_event`) is the unified event supertype — the shared query surface that answers "all events involving Agent X" via `EventParticipant`. SW#349 extended it **additively** with the canonicalization layer so every event subtype inherits it:
+
+- `canonical_attestation` — FK to `core.Attestation` (`SET_NULL`), a **fast-lookup cache** of the winning attestation. The **source of truth** is `Attestation.is_canonical` (partial-unique-enforced on the Attestation side); the FK is an intentional denormalized cache, not a second truth.
+- `attestation_disagreement` — flags conflicting source attestations.
+- `is_amended` / `amendment_count` / `event_state` (`active` / `amended` / `withdrawn` / `superseded`) — revision tracking.
+
+The existing discriminator field `event_type` (which already included `transaction`) is **kept as-is** — no rename, no shadowing `event_subtype` field — to avoid breaking downstream consumers.
+
+**`Transaction` as a first-class Event subtype.** `transactions.Transaction` (table `sw_transaction`) is a one-to-one detail row on an `Event` with `event_type='transaction'`, mirroring the existing `CorporateEvent` / `SpatioTemporalEvent` / `ElectoralEvent` pattern. It carries the transaction-level financial summary (`transaction_subtype` = contribution/expenditure/transfer/obligation, `amount`, `currency`, `transaction_date`); the Event carries the canonicalization layer.
+
+The existing typed records (`Contribution` / `Expenditure` / `Transfer` / `ObligationEvent`) gain a **nullable** `event` FK (`%(class)s_records` reverse accessor) so they roll up to their canonical Event without a destructive change to the merged four-table design. Transaction parties are recorded through the shared `EventParticipant` bridge (payer = `source`, payee = `target`); the typed records' `from_agent` / `to_agent` fields remain as a transaction-specific specialization.
 
 ## Cross-references
 

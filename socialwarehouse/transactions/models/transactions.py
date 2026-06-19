@@ -7,7 +7,6 @@ from socialwarehouse.core.mixins import (
     generate_entity_uuid4,
 )
 
-
 AGENT_TYPE_CHOICES = [
     ("person", "Person"),
     ("committee", "Committee"),
@@ -49,6 +48,13 @@ GROUP_TYPE_CHOICES = [
     ("other", "Other"),
 ]
 
+TRANSACTION_SUBTYPE_CHOICES = [
+    ("contribution", "Contribution"),
+    ("expenditure", "Expenditure"),
+    ("transfer", "Transfer"),
+    ("obligation", "Obligation"),
+]
+
 
 class _TransactionBase(SourceAwareModel):
     """Shared fields for all transaction types.
@@ -80,6 +86,18 @@ class _TransactionBase(SourceAwareModel):
     amount = models.DecimalField(max_digits=14, decimal_places=2)
     transaction_date = models.DateField(db_index=True)
     description = models.TextField(blank=True, default="")
+    # Optional link to the canonical Event (event_type='transaction') that
+    # carries the canonicalization layer for this record (SW#349). Nullable
+    # and additive: existing rows are valid unlinked and can be backfilled.
+    event = models.ForeignKey(
+        "sw_events.Event",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="%(class)s_records",
+        related_query_name="%(class)s_record",
+        help_text="Canonical Event this transaction record rolls up to",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -343,3 +361,72 @@ class TransactionGroup(models.Model):
 
     def __str__(self):
         return f"{self.group_type}: {self.description[:50]}" if self.description else f"{self.group_type}"
+
+
+class Transaction(models.Model):
+    """Financial-event subtype detail of an Event (SW#349).
+
+    Mirrors the CorporateEvent / SpatioTemporalEvent / ElectoralEvent
+    pattern in the events app: a one-to-one detail row hanging off an
+    Event whose ``event_type='transaction'``. It gives transactions the
+    same first-class subtype treatment the other event kinds already
+    have, and carries the transaction-level financial summary while the
+    Event carries the canonicalization layer (canonical_attestation,
+    attestation_disagreement, amendment tracking, event_state).
+
+    The typed records (Contribution / Expenditure / Transfer /
+    ObligationEvent) link to the same Event via their nullable ``event``
+    FK; ``transaction_subtype`` names which typed family this Event's
+    transaction detail belongs to. Event participants (payer / payee)
+    are recorded through the shared ``EventParticipant`` bridge, with the
+    typed records' ``from_agent`` / ``to_agent`` fields kept as a
+    transaction-specific specialization.
+    """
+
+    event = models.OneToOneField(
+        "sw_events.Event",
+        on_delete=models.CASCADE,
+        related_name="transaction_detail",
+    )
+    transaction_subtype = models.CharField(
+        max_length=20,
+        choices=TRANSACTION_SUBTYPE_CHOICES,
+        db_index=True,
+        help_text="contribution / expenditure / transfer / obligation",
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    currency = models.CharField(
+        max_length=3,
+        default="USD",
+        help_text="ISO 4217 currency code",
+    )
+    transaction_date = models.DateField(
+        db_index=True,
+        help_text="Financial event date (may equal Event.event_date)",
+    )
+    source_transaction_uuid = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="transaction_uuid of a related source record, if any",
+    )
+    transaction_group_uuid = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="group_uuid of the TransactionGroup this belongs to, if any",
+    )
+
+    class Meta:
+        verbose_name = "Transaction"
+        verbose_name_plural = "Transactions"
+        db_table = "sw_transaction"
+        indexes = [
+            models.Index(
+                fields=["transaction_subtype", "transaction_date"],
+                name="idx_txn_subtype_date",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.transaction_subtype}: ${self.amount} on {self.transaction_date}"

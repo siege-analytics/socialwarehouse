@@ -10,10 +10,12 @@ from .facets import (
     Role,
 )
 from .organization import Organization
+from .person import Person
 
 __all__ = [
     "Committee",
     "Organization",
+    "Person",
     "Classification",
     "Role",
     "RelationshipSimple",

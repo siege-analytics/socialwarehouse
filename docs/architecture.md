@@ -69,8 +69,8 @@ This means:
 
 | App | Purpose | Key models |
 |---|---|---|
-| `socialwarehouse.core` | Abstract mixins and UUID generation | `SourceAwareModel`, `IdentifiableModel` |
-| `socialwarehouse.agents` | Entity-resolved actors | `Committee`, `Organization`, `Classification`, `Role`, `Relationship*` (6 types) |
+| `socialwarehouse.core` | Abstract mixins, UUID generation, polymorphic supertypes | `SourceAwareModel`, `IdentifiableModel`, `Agent`, `AgentSubtype` |
+| `socialwarehouse.agents` | Entity-resolved actors | `Person`, `Committee`, `Organization`, `Classification`, `Role`, `Relationship*` (6 types) |
 | `socialwarehouse.political` | Political structure | `Office`, `Seat`, `Election`, `ElectoralContest`, `OfficeTerm` |
 | `socialwarehouse.transactions` | Financial flows | `Contribution`, `Expenditure`, `Transfer`, `Obligation`, `ObligationEvent`, `TransactionGroup` |
 | `socialwarehouse.events` | Unified event supertype | `Event`, `EventParticipant`, `CorporateEvent`, `SpatioTemporalEvent`, `ElectoralEvent` |
@@ -96,6 +96,32 @@ This means:
 | `/api/political/` | `socialwarehouse.api.political` | office, seat, election, contest, term |
 | `/api/transactions/` | `socialwarehouse.api.transactions` | contribution, expenditure, transfer, obligation |
 | `/api/events/` | `socialwarehouse.api.events` | event (with participants + subtype details) |
+
+## Polymorphic canonical-truth layer (core supertypes)
+
+SW canonical supports adopters whose source data carries multi-source provenance and identity-resolution semantics (electinfo's FEC cluster is the first such adopter). The pattern is three sibling **polymorphic supertypes** in `socialwarehouse.core`, each with its own subtype family:
+
+| Supertype | Role | Subtypes | Status |
+|---|---|---|---|
+| `Agent` | Identity hub for actors | `Person`, `Committee`, `Organization` (domain-app detail rows) | Landed (SW#348) |
+| `Event` | Canonicalization hub for events | `Transaction` (Contribution / Expenditure / Transfer / Obligation), and future siblings (election, disaster) | Planned (SW#349) |
+| `Attestation` | Multi-source provenance / canonical-truth records | `FECAttestation` first; entity-resolution attestation a future sibling | Planned (SW#350) |
+
+`core/` holds the polymorphic **bases only**; concrete subtype detail lives in the domain apps. This keeps the canonical-truth abstractions in one place while letting each domain own its specific columns.
+
+### Agent supertype (SW#348)
+
+`core.Agent` (table `sw_agent`) is the polymorphic actor hub. One Agent row is the canonical identity for an actor regardless of which concrete kind carries its detail:
+
+- `subtype` — names the concrete kind (`person` / `committee` / `organization`); also the one-to-one reverse accessor on the Agent (`agent.person`, `agent.committee`, `agent.organization`).
+- `lifecycle_state` — `active` / `dissolved` / `merged` / `unknown`.
+- `resolution_confidence` — identity-resolution confidence in `[0, 1]`, NULL when unscored.
+- `dissolved_on` — set when an agent dissolves.
+- `entity_uuid` — deterministic UUID5 over `(subtype, data_source, source_record_id)` (via `IdentifiableModel`), so the same source row resolves to the same Agent on re-ingest.
+
+Concrete subtypes inherit `core.AgentSubtype`, an abstract base that adds a **nullable** one-to-one `agent` link. `Person` is a new SW model; `Committee` and `Organization` gain the link without disturbing their existing tables. The link is nullable so the introducing migration is forward-only and backward-compatible — existing rows are valid unlinked and can be backfilled incrementally.
+
+`Agent.get_subtype_instance()` dispatches on `subtype` to the matching detail row (or `None` when unlinked). This mirrors the electinfo `enterprise.agents` actor hub, where many incoming FKs target a single polymorphic actor id.
 
 ## Cross-references
 

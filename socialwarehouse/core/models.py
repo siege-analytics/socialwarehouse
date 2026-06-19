@@ -3,6 +3,8 @@ import uuid
 from django.db import models
 from django.utils import timezone
 
+from socialwarehouse.core.agent import Agent, AgentSubtype  # noqa: F401
+
 
 class EntityIdentifier(models.Model):
     """Append-only log of entity identifiers for cross-source resolution.

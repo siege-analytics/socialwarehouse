@@ -12,7 +12,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("warehouse", "0006_partition_fact_tables"),
+        ("sw_warehouse", "0006_partition_fact_tables"),
     ]
 
     operations = [

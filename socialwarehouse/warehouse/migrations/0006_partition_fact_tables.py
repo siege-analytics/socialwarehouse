@@ -218,7 +218,7 @@ ALTER TABLE sw_fact_person_score ADD PRIMARY KEY (id);
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("warehouse", "0005_fact_electoral_contest_fk"),
+        ("sw_warehouse", "0005_fact_electoral_contest_fk"),
     ]
 
     operations = [

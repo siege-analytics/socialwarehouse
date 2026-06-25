@@ -102,6 +102,21 @@ class Agent(SourceAwareModel, IdentifiableModel):
                 name="idx_agent_source_recid",
             ),
         ]
+        constraints = [
+            # resolution_confidence is a probability in [0, 1] (NULL when
+            # unscored). Enforced at the DB so an out-of-range score from an
+            # identity-resolution producer fails loudly instead of being
+            # stored silently. DecimalField(max_digits=5) alone would accept
+            # values up to 9.9999 and negatives.
+            models.CheckConstraint(
+                condition=models.Q(resolution_confidence__isnull=True)
+                | models.Q(
+                    resolution_confidence__gte=0,
+                    resolution_confidence__lte=1,
+                ),
+                name="ck_agent_resolution_confidence_0_1",
+            ),
+        ]
 
     def save(self, *args, **kwargs):
         if not self.entity_uuid:

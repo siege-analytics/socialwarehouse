@@ -34,4 +34,12 @@ class Migration(migrations.Migration):
                 'indexes': [models.Index(fields=['subtype', 'lifecycle_state'], name='idx_agent_subtype_state'), models.Index(fields=['data_source', 'source_record_id'], name='idx_agent_source_recid')],
             },
         ),
+        migrations.AddConstraint(
+            model_name='agent',
+            constraint=models.CheckConstraint(
+                condition=models.Q(resolution_confidence__isnull=True)
+                | models.Q(resolution_confidence__gte=0, resolution_confidence__lte=1),
+                name='ck_agent_resolution_confidence_0_1',
+            ),
+        ),
     ]

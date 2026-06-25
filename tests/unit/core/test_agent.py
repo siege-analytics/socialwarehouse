@@ -3,6 +3,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 
 from socialwarehouse.agents.models import Committee, Organization, Person
@@ -60,6 +61,28 @@ class TestAgentSupertype(TestCase):
         # NULL when not scored.
         b = Agent.objects.create(subtype="person", data_source="vendor", source_record_id="P3")
         assert b.resolution_confidence is None
+
+    def test_resolution_confidence_range_enforced(self):
+        # The [0, 1] range is DB-enforced (ck_agent_resolution_confidence_0_1),
+        # not just documented. Out-of-range scores must be rejected.
+        for bad in (Decimal("1.5"), Decimal("-0.1")):
+            with self.assertRaises(IntegrityError):
+                with transaction.atomic():
+                    Agent.objects.create(
+                        subtype="person",
+                        data_source="vendor",
+                        source_record_id=f"bad{bad}",
+                        resolution_confidence=bad,
+                    )
+        # Boundaries and NULL are accepted.
+        for ok in (Decimal("0"), Decimal("1"), Decimal("0.5000"), None):
+            a = Agent.objects.create(
+                subtype="person",
+                data_source="vendor",
+                source_record_id=f"ok{ok}",
+                resolution_confidence=ok,
+            )
+            assert a.resolution_confidence == ok
 
     def test_polymorphic_dispatch_resolves_concrete_subtype(self):
         # Committee subtype -> agent.committee reverse accessor.

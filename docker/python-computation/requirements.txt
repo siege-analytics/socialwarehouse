@@ -2,8 +2,15 @@
 # The socialwarehouse + swh packages are installed via `pip install -e .` at runtime
 # (since the repo is volume-mounted at /opt/social_warehouse/).
 
-siege-utilities[geo]>=3.17.2
-Django>=5.2
+# siege-utilities pinned to a hotfix on the v3.23.0 release point: v3.23.0 +
+# the siege_geo migration-0006 fix (0006 re-added RedistrictingPlan.state that
+# 0005 already adds, crashing a fresh `migrate` with DuplicateColumn). The
+# unpinned >=3.17.2 floated to 3.23.0 and broke CI. Revert to a released
+# version constraint once siege_utilities cuts a release containing the fix.
+siege-utilities[geo] @ git+https://github.com/siege-analytics/siege_utilities@d77c54c8af49b7fe2e6448bbc455fa0d5cc5fa97
+# Cap below Django 6: the warehouse is authored for Django 5.2; an unpinned
+# >=5.2 floated to 6.0.x. Lift the cap once a 6.x migration is done deliberately.
+Django>=5.2,<6
 djangorestframework>=3.16
 djangorestframework-gis>=1.0
 django-grappelli>=4.0

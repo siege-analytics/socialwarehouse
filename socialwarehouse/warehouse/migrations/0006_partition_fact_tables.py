@@ -24,8 +24,8 @@ ALTER TABLE sw_fact_redistricting_plan RENAME TO sw_fact_redistricting_plan_old;
 -- Step 2: Create partitioned table with same schema
 CREATE TABLE sw_fact_redistricting_plan (
     id bigserial,
-    geography_id bigint NOT NULL REFERENCES sw_dim_geography(id) ON DELETE CASCADE,
-    cycle_id bigint NOT NULL REFERENCES sw_dim_redistricting_cycle(id) ON DELETE CASCADE,
+    geography_id bigint NOT NULL REFERENCES sw_warehouse_dimgeography(id) ON DELETE CASCADE,
+    cycle_id bigint NOT NULL REFERENCES sw_warehouse_dimredistrictingcycle(id) ON DELETE CASCADE,
     chamber varchar(16) NOT NULL,
     plan_type varchar(32) NOT NULL,
     district_number varchar(8) NOT NULL,
@@ -68,7 +68,7 @@ ALTER TABLE sw_fact_vote_history RENAME TO sw_fact_vote_history_old;
 
 CREATE TABLE sw_fact_vote_history (
     id bigserial,
-    person_id bigint NOT NULL REFERENCES sw_dim_person(id) ON DELETE CASCADE,
+    person_id bigint NOT NULL REFERENCES sw_warehouse_dimperson(id) ON DELETE CASCADE,
     election_date date NOT NULL,
     election_type varchar(16) NOT NULL,
     voted_method varchar(16) NOT NULL DEFAULT 'unknown',
@@ -135,7 +135,7 @@ ALTER TABLE sw_fact_person_score RENAME TO sw_fact_person_score_old;
 
 CREATE TABLE sw_fact_person_score (
     id bigserial,
-    person_id bigint NOT NULL REFERENCES sw_dim_person(id) ON DELETE CASCADE,
+    person_id bigint NOT NULL REFERENCES sw_warehouse_dimperson(id) ON DELETE CASCADE,
     score_type varchar(128) NOT NULL,
     value double precision NOT NULL,
     source_vendor varchar(16) NOT NULL,
@@ -143,7 +143,11 @@ CREATE TABLE sw_fact_person_score (
     scored_at timestamptz NOT NULL,
     loaded_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (id, scored_at),
-    UNIQUE (person_id, score_type, source_vendor, methodology_version)
+    -- scored_at is required in the UNIQUE: Postgres mandates the partition
+    -- key in every unique constraint on a partitioned table. The model's
+    -- unique_together (person, score_type, source_vendor, methodology_version)
+    -- is widened by scored_at here so DB-level uniqueness survives partitioning.
+    UNIQUE (person_id, score_type, source_vendor, methodology_version, scored_at)
 ) PARTITION BY RANGE (scored_at);
 
 CREATE TABLE sw_fact_person_score_default

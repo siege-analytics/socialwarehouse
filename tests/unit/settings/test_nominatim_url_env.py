@@ -1,85 +1,39 @@
-"""Tests for SW#22's NOMINATIM_URL env-driven Django setting.
+"""Tests for ``swh.config.NominatimSettings`` (NOMINATIM_* env-driven config).
 
-The setting used to be a hardcoded ``"https://nominatim.openstreetmap.org/search?"``
-(workspace-wide, no override). SW#22 made it env-overridable so the
-self-hosted Nominatim profile (``docker-compose --profile geocoding``)
-can route the geocode-addresses command at the in-cluster service.
+Nominatim client config is a pydantic-settings class in ``swh/config.py``
+with ``env_prefix="NOMINATIM_"``: it defaults to the public OSM instance
+and is overridable for the self-hosted geocoding profile
+(``docker-compose --profile geocoding``).
 
-The base URL ``NOMINATIM_URL`` is read from env; ``NOMINATIM_API_BASE_URL``
-is built by appending ``/search?`` for back-compat with existing
-consumers. These tests pin both shapes.
+This supersedes SW#22's original Django-settings shape — the config moved
+to ``swh.config`` (pydantic settings), and the ``/search?`` path is
+appended by the geocoder at call time rather than stored on the settings
+object, so there is no longer a ``NOMINATIM_API_BASE_URL`` setting.
 """
-
 from __future__ import annotations
 
-import importlib
-import os
-
-import pytest
+from swh.config import NominatimSettings
 
 
-def _reload_settings_module():
-    """Re-import the Django settings module under the current env.
-
-    Settings modules read env at import time; we need a fresh import
-    after monkeypatching the relevant variable.
-    """
-    import socialwarehouse.settings.base as base_settings
-    return importlib.reload(base_settings)
-
-
-class TestNominatimUrlDefault:
-    """When NOMINATIM_URL is unset, the public endpoint is the default."""
+class TestNominatimSettingsDefault:
+    """With no env override, the public OSM endpoint is the default."""
 
     def test_default_url_is_public_nominatim(self, monkeypatch):
         monkeypatch.delenv("NOMINATIM_URL", raising=False)
-        settings = _reload_settings_module()
-        assert settings.NOMINATIM_URL == "https://nominatim.openstreetmap.org"
-
-    def test_default_api_base_url_appends_search_path(self, monkeypatch):
-        monkeypatch.delenv("NOMINATIM_URL", raising=False)
-        settings = _reload_settings_module()
-        assert settings.NOMINATIM_API_BASE_URL == "https://nominatim.openstreetmap.org/search?"
-
-
-class TestNominatimUrlEnvOverride:
-    """When NOMINATIM_URL is set in env, both NOMINATIM_URL and
-    NOMINATIM_API_BASE_URL pick it up."""
-
-    @pytest.mark.parametrize("env_value,expected_url,expected_api", [
-        (
-            "http://nominatim:8080",
-            "http://nominatim:8080",
-            "http://nominatim:8080/search?",
-        ),
-        (
-            "http://localhost:8080",
-            "http://localhost:8080",
-            "http://localhost:8080/search?",
-        ),
-        # Trailing-slash on the env value should not produce a double-slash:
-        (
-            "http://nominatim:8080/",
-            "http://nominatim:8080/",
-            "http://nominatim:8080/search?",
-        ),
-    ])
-    def test_env_value_flows_into_both_settings(self, monkeypatch, env_value, expected_url, expected_api):
-        monkeypatch.setenv("NOMINATIM_URL", env_value)
-        settings = _reload_settings_module()
-        assert settings.NOMINATIM_URL == expected_url
-        assert settings.NOMINATIM_API_BASE_URL == expected_api
-
-
-class TestNominatimUserAgentEnvOverride:
-    """SW#22 also made NOMINATIM_USER_AGENT env-overridable."""
+        assert NominatimSettings().url == "https://nominatim.openstreetmap.org"
 
     def test_default_user_agent(self, monkeypatch):
         monkeypatch.delenv("NOMINATIM_USER_AGENT", raising=False)
-        settings = _reload_settings_module()
-        assert settings.NOMINATIM_USER_AGENT == "socialwarehouse"
+        assert NominatimSettings().user_agent == "socialwarehouse"
 
-    def test_env_value_overrides_default(self, monkeypatch):
+
+class TestNominatimSettingsEnvOverride:
+    """NOMINATIM_URL / NOMINATIM_USER_AGENT env vars override the defaults."""
+
+    def test_url_env_override(self, monkeypatch):
+        monkeypatch.setenv("NOMINATIM_URL", "http://nominatim:8080")
+        assert NominatimSettings().url == "http://nominatim:8080"
+
+    def test_user_agent_env_override(self, monkeypatch):
         monkeypatch.setenv("NOMINATIM_USER_AGENT", "socialwarehouse-self-host")
-        settings = _reload_settings_module()
-        assert settings.NOMINATIM_USER_AGENT == "socialwarehouse-self-host"
+        assert NominatimSettings().user_agent == "socialwarehouse-self-host"

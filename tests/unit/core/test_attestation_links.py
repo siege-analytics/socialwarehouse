@@ -61,13 +61,20 @@ class _SchemaManaged(TransactionTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        with connection.schema_editor() as editor:
-            editor.create_model(cls.concrete_model)
+        # The concrete stand-in models are declared at module level, so they
+        # stay registered in the app registry (with FKs to Attestation) for the
+        # whole test session. Their tables must therefore persist for the whole
+        # session too — otherwise a later test that deletes an Attestation (e.g.
+        # the Event-canonicalization SET_NULL tests) traverses these reverse
+        # relations via Django's delete-collector and queries a dropped table.
+        # Create idempotently and do NOT drop per-class; the test DB teardown
+        # removes the tables at session end.
+        if cls.concrete_model._meta.db_table not in connection.introspection.table_names():
+            with connection.schema_editor() as editor:
+                editor.create_model(cls.concrete_model)
 
     @classmethod
     def tearDownClass(cls):
-        with connection.schema_editor() as editor:
-            editor.delete_model(cls.concrete_model)
         super().tearDownClass()
 
 

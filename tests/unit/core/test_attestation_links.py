@@ -11,7 +11,7 @@ import uuid
 from decimal import Decimal
 
 import pytest
-from django.db import connection, models
+from django.db import models
 from django.test import TransactionTestCase
 
 from socialwarehouse.core.attestation import Attestation
@@ -54,21 +54,15 @@ def _mk_attestation():
 
 
 class _SchemaManaged(TransactionTestCase):
-    """Base that creates/drops one test-only concrete model's table."""
+    """Base for the adopter stand-in tests.
+
+    The concrete stand-in models' tables are created session-wide by the
+    ``_attestation_link_test_tables`` fixture in conftest.py (the models are
+    declared at module level, so they are registered for the whole test
+    session), so these classes do not manage tables themselves.
+    """
 
     concrete_model = None
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        with connection.schema_editor() as editor:
-            editor.create_model(cls.concrete_model)
-
-    @classmethod
-    def tearDownClass(cls):
-        with connection.schema_editor() as editor:
-            editor.delete_model(cls.concrete_model)
-        super().tearDownClass()
 
 
 @pytest.mark.django_db(transaction=True)

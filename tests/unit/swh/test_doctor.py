@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
@@ -24,7 +26,10 @@ class TestPythonVersionCheck(SimpleTestCase):
         self.assertIn(str(sys.version_info.major), result.detail)
 
     def test_fails_on_old_python(self):
-        fake_version = type(sys.version_info)(3, 10, 0, "final", 0)
+        # sys.version_info's type cannot be instantiated directly (TypeError
+        # on 3.12+); a SimpleNamespace with the attributes check_python_version
+        # reads (major/minor/micro) is an adequate, patchable stand-in.
+        fake_version = SimpleNamespace(major=3, minor=10, micro=0, releaselevel="final", serial=0)
         with patch.object(sys, "version_info", fake_version):
             result = check_python_version()
             self.assertEqual(result.status, Status.FAIL)
@@ -34,7 +39,9 @@ class TestPythonVersionCheck(SimpleTestCase):
 class TestEnvFileCheck(SimpleTestCase):
 
     def test_fails_when_missing(self):
-        with patch("swh.doctor.find_repo_root", return_value=__import__("pathlib").Path("/nonexistent")):
+        # check_env_file does `from swh.template import find_repo_root` at call
+        # time, so the patch target is swh.template (not swh.doctor).
+        with patch("swh.template.find_repo_root", return_value=Path("/nonexistent")):
             result = check_env_file()
             self.assertEqual(result.status, Status.FAIL)
             self.assertIn("not found", result.detail)

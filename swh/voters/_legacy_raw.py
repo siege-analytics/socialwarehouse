@@ -326,7 +326,7 @@ def voter_file_to_geodataframe(
 ) -> gpd.GeoDataFrame:
     """Read a voter file CSV into a GeoDataFrame (in-memory, no PostGIS).
 
-    Useful for Tier 3 (GeoPandas-only) processing in Reverberator.
+    Useful for Tier 3 (GeoPandas-only) processing in downstream consumers.
 
     Args:
         filepath: Path to the voter file CSV.

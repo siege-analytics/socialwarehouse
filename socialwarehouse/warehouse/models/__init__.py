@@ -20,6 +20,11 @@ from .facts import (
     FactUrbanicity,
     FactVoteHistory,
 )
+from .monitoring import (
+    MaterializationRecord,
+    ParityCheck,
+    ReplicationLagSnapshot,
+)
 
 __all__ = [
     "DimGeography",
@@ -36,6 +41,9 @@ __all__ = [
     "FactRedistrictingPlan",
     "FactPersonScore",
     "FactVoteHistory",
+    "MaterializationRecord",
+    "ReplicationLagSnapshot",
+    "ParityCheck",
     "VENDOR_CHOICES",
     "REGISTRATION_STATUS_CHOICES",
     "ELECTION_TYPE_CHOICES",

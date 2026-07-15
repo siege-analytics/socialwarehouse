@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "socialwarehouse"
-version = "2.3.0"
+version = "2.3.1-dev"
 description = "Data warehouse and delta lake for geographic, demographic, and civic data — the DSTK replacement"
 readme = "README.md"
 license = {text = "Proprietary"}
@@ -14,8 +14,11 @@ authors = [
 ]
 
 dependencies = [
-    "siege-utilities[geo]>=3.17.2",
-    "Django>=5.2",
+    # Pinned to v3.23.0 + the siege_geo migration-0006 fix (see
+    # docker/python-computation/requirements.txt for the rationale). Revert to a
+    # released version constraint once siege_utilities ships the fix.
+    "siege-utilities[geo] @ git+https://github.com/siege-analytics/siege_utilities@d77c54c8af49b7fe2e6448bbc455fa0d5cc5fa97",
+    "Django>=5.2,<6",
     "djangorestframework>=3.16",
     "djangorestframework-gis>=1.0",
     "django-grappelli>=4.0",

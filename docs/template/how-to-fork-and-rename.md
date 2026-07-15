@@ -35,17 +35,10 @@ mv socialwarehouse <your-warehouse>
 cd <your-warehouse>
 
 # Option B: Plain clone + rename + new remote
-git clone --recurse-submodules git@github.com:siege-analytics/socialwarehouse.git <your-warehouse>
+git clone git@github.com:siege-analytics/socialwarehouse.git <your-warehouse>
 cd <your-warehouse>
 git remote rename origin upstream
 git remote add origin git@github.com:<your-org>/<your-warehouse>.git
-```
-
-Either way, confirm the GST submodule cloned:
-
-```bash
-ls vendor/geodjango_simple_template/app/hellodjango/
-# should show: manage.py, hellodjango/, locations/, ...
 ```
 
 ## Step 2 — Rename the Python package
@@ -193,7 +186,6 @@ git push -u origin main   # or develop, depending on your branch convention
 |---|---|---|
 | `ModuleNotFoundError: No module named 'socialwarehouse'` after rename | Missed a rename | `grep -rln 'socialwarehouse' --exclude-dir=.git --exclude-dir=vendor` and finish the pass |
 | Django migrations fail with `LookupError: No installed app with label 'sw_geo'` | Renamed app labels but didn't update fixtures / migrations referencing them | Either don't rename app labels (Step 3 is optional) or write the RenameApp migration |
-| GST submodule didn't clone | Forgot `--recurse-submodules` | `git submodule update --init --recursive` |
 | `pip install -e .` fails | `pyproject.toml` rename was incomplete | Check `[project] name` AND `[tool.setuptools.packages.find] include` |
 | Imports work but Dagster doesn't discover assets | `dagster dev -m socialwarehouse.orchestration` still references old name | Use `-m <your-warehouse>.orchestration` |
 

@@ -10,8 +10,11 @@ ARG PYTHON_VENV_PATH=/opt/venv
 ARG DEBIAN_FRONTEND=noninteractive
 
 # ---- OS packages ----
+# git is required at build time so pip can install the temporary
+# git-based siege-utilities pin (see requirements.txt). Drop it again once
+# siege-utilities is pinned to a released version (>=3.23.1).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        tzdata build-essential wget ca-certificates \
+        tzdata build-essential wget ca-certificates git \
         python3-pip python3-venv python3-dev python3-pyproj \
         gdal-bin libgdal-dev \
         postgresql-client \

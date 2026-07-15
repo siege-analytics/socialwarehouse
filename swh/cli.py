@@ -29,6 +29,7 @@ Example usage:
 from __future__ import annotations
 
 import logging
+import os
 import sys
 
 import click
@@ -427,6 +428,465 @@ def materialize_electoral_backfill_addresses(tolerance):
         click.echo(f"Address backfill complete: {counts}")
     finally:
         spark.stop()
+
+
+@cli.command("init")
+@click.argument("project_name", default="socialwarehouse-dev")
+@click.option("--db-name", default="socialwarehouse_dev", help="Postgres DB name")
+@click.option("--db-user", default=None, help="Postgres user (default: $USER)")
+@click.option("--db-host", default="localhost", help="Postgres host")
+@click.option("--db-port", default=5432, type=int, help="Postgres port")
+@click.option("--db-password", default="", help="Postgres password")
+@click.option("--redis-url", default="redis://redis:6379/0", help="Redis URL for Celery")
+@click.option("--states", default="48", help="Default seed state FIPS (comma-separated)")
+@click.option("--non-interactive", is_flag=True, help="Skip prompts, use defaults/flags")
+@click.option("--docker", is_flag=True, help="Run `docker compose build` after setup")
+def init(project_name, db_name, db_user, db_host, db_port, db_password, redis_url, states, non_interactive, docker):
+    """One-time project setup: generate .env and configure credentials.
+
+    Writes a .env file with a generated SECRET_KEY and the provided
+    database credentials. Run this once after cloning the template.
+
+    Examples:
+        swh init
+        swh init myorg-warehouse --db-name myorg_dev --non-interactive
+        swh init myorg-warehouse --docker
+    """
+    import subprocess
+
+    from swh.template import find_repo_root, generate_env
+
+    root = find_repo_root()
+    env_path = root / ".env"
+
+    if env_path.exists():
+        click.echo(f".env already exists at {env_path}")
+        click.echo("Delete it first to regenerate, or edit it directly.")
+        return
+
+    if not non_interactive:
+        project_name = click.prompt("Project name", default=project_name)
+        db_name = click.prompt("Postgres DB name", default=db_name)
+        db_user = click.prompt("Postgres user", default=db_user or os.environ.get("USER", "postgres"))
+        db_host = click.prompt("Postgres host", default=db_host)
+        db_port = click.prompt("Postgres port", default=db_port, type=int)
+        db_password = click.prompt("Postgres password (leave blank for peer auth)", default="", show_default=False)
+        states = click.prompt("Default seed state FIPS", default=states)
+
+    env_content = generate_env(
+        project_name=project_name,
+        db_name=db_name,
+        db_user=db_user,
+        db_password=db_password,
+        db_host=db_host,
+        db_port=db_port,
+        redis_url=redis_url,
+        default_states=states,
+    )
+    env_path.write_text(env_content)
+    click.echo(f"Wrote {env_path}")
+
+    if docker:
+        click.echo("Running docker compose build...")
+        subprocess.run(["docker", "compose", "build"], cwd=root, check=False)
+
+    click.echo("")
+    click.echo("Next steps:")
+    click.echo("  1. Review and edit .env as needed")
+    click.echo("  2. Create the database:")
+    click.echo(f"       createdb {db_name}")
+    click.echo(f'       psql {db_name} -c "CREATE EXTENSION postgis;"')
+    click.echo("  3. Install and migrate:")
+    click.echo("       pip install -e .")
+    click.echo("       python manage.py migrate")
+    click.echo("  4. Seed data:")
+    click.echo(f"       swh seed --state {states}")
+    click.echo("  5. Verify:")
+    click.echo("       swh doctor")
+
+
+@cli.command("seed")
+@click.option("--state", "-s", default=None, help="State FIPS or abbreviation (default: from SW_DEFAULT_STATES or 48)")
+@click.option("--vintage", "-v", type=int, default=None, help="Census vintage year")
+@click.option("--skip", default=None, help="Comma-separated domains to skip (political,demographic,economic,civic)")
+@click.option("--dry-run", is_flag=True, help="Show what would run without executing")
+def seed(state, vintage, skip, dry_run):
+    """Seed a state's data across all four domains.
+
+    Wraps `manage.py seed_demo` for discoverability from the swh CLI.
+
+    Examples:
+        swh seed
+        swh seed --state VA
+        swh seed --state 48 --skip economic,civic
+        swh seed --dry-run
+    """
+    import subprocess
+
+    cmd = [sys.executable, "manage.py", "seed_demo"]
+
+    effective_state = state or os.environ.get("SW_DEFAULT_STATES", "48")
+    cmd.extend(["--states", effective_state])
+
+    if skip:
+        cmd.extend(["--skip", skip])
+    if dry_run:
+        cmd.append("--dry-run")
+    if vintage:
+        cmd.extend(["--vintage", str(vintage)])
+
+    click.echo(f"Running: {' '.join(cmd)}")
+    result = subprocess.run(cmd, check=False)
+    sys.exit(result.returncode)
+
+
+@cli.command("upgrade")
+@click.option("--remote", default="origin", help="Git remote to pull from")
+@click.option("--docker", is_flag=True, help="Also rebuild Docker images")
+@click.option("--skip-migrate", is_flag=True, help="Skip database migrations")
+def upgrade(remote, docker, skip_migrate):
+    """Pull upstream updates, install deps, and run migrations.
+
+    Pulls the latest from the template remote, reinstalls the package
+    to pick up new dependencies, and runs Django migrations.
+
+    Examples:
+        swh upgrade
+        swh upgrade --remote upstream
+        swh upgrade --docker
+    """
+    import subprocess
+
+    from swh.template import find_repo_root
+
+    root = find_repo_root()
+
+    click.echo(f"Pulling from {remote}...")
+    result = subprocess.run(["git", "pull", remote], cwd=root, check=False)
+    if result.returncode != 0:
+        click.echo("git pull failed — resolve conflicts and try again.", err=True)
+        sys.exit(result.returncode)
+
+    click.echo("Installing dependencies...")
+    subprocess.run([sys.executable, "-m", "pip", "install", "-e", "."], cwd=root, check=False)
+
+    if not skip_migrate:
+        click.echo("Running migrations...")
+        result = subprocess.run(
+            [sys.executable, "manage.py", "migrate", "--no-input"],
+            cwd=root,
+            check=False,
+        )
+        if result.returncode != 0:
+            click.echo("Migrations failed — check database connection.", err=True)
+            sys.exit(result.returncode)
+
+    if docker:
+        click.echo("Rebuilding Docker images...")
+        subprocess.run(["docker", "compose", "build", "--pull"], cwd=root, check=False)
+
+    click.echo("Upgrade complete.")
+
+
+@cli.command("doctor")
+@click.option("--json", "as_json", is_flag=True, help="Output results as JSON")
+@click.option("--verbose", is_flag=True, help="Show passing checks too")
+def doctor(as_json, verbose):
+    """Verify environment health: PostGIS, Redis, Spark, env vars, disk.
+
+    Runs a suite of checks and reports pass/warn/fail for each.
+
+    Examples:
+        swh doctor
+        swh doctor --verbose
+        swh doctor --json
+    """
+    import json as json_mod
+
+    from swh.doctor import Status, run_all_checks
+
+    results = run_all_checks()
+
+    if as_json:
+        data = [
+            {"name": r.name, "status": r.status.value, "detail": r.detail}
+            for r in results
+        ]
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo("Social Warehouse Doctor")
+        click.echo("=" * 50)
+        for r in results:
+            if r.status == Status.PASS:
+                icon = "OK"
+                style = "green"
+            elif r.status == Status.WARN:
+                icon = "WARN"
+                style = "yellow"
+            else:
+                icon = "FAIL"
+                style = "red"
+
+            if r.status != Status.PASS or verbose:
+                click.echo(
+                    click.style(f"  [{icon}]", fg=style)
+                    + f"  {r.name}: {r.detail}"
+                )
+
+        failures = [r for r in results if r.status == Status.FAIL]
+        warnings = [r for r in results if r.status == Status.WARN]
+        passes = [r for r in results if r.status == Status.PASS]
+        click.echo("")
+        click.echo(f"  {len(passes)} passed, {len(warnings)} warnings, {len(failures)} failures")
+
+        if failures:
+            sys.exit(1)
+
+
+@cli.command("audit-indexes")
+@click.option("--json", "as_json", is_flag=True, help="Output results as JSON")
+@click.option("--bloat-threshold", type=float, default=50.0, help="Bloat percentage threshold (default: 50)")
+@click.option("--min-size-mb", type=float, default=1.0, help="Minimum index size in MB to report (default: 1)")
+def audit_indexes_cmd(as_json, bloat_threshold, min_size_mb):
+    """Audit PostGIS indexes for unused, duplicate, and bloated entries.
+
+    Connects directly to PostgreSQL (bypassing PgBouncer) and queries
+    pg_stat_user_indexes and pg_index catalog views.
+
+    Examples:
+        swh audit-indexes
+        swh audit-indexes --json
+        swh audit-indexes --bloat-threshold 30 --min-size-mb 10
+    """
+    import json as json_mod
+
+    from swh.audit_indexes import Finding, audit_indexes, pretty_size
+
+    dsn = settings.database.direct_psycopg2_dsn
+    min_size_bytes = int(min_size_mb * 1024 * 1024)
+
+    try:
+        issues = audit_indexes(
+            dsn,
+            bloat_threshold_pct=bloat_threshold,
+            min_size_bytes=min_size_bytes,
+        )
+    except Exception as exc:
+        click.echo(click.style(f"  [FAIL]  could not connect: {exc}", fg="red"), err=True)
+        sys.exit(1)
+
+    if as_json:
+        data = [
+            {
+                "finding": i.finding.value,
+                "schema": i.schema_name,
+                "table": i.table_name,
+                "index": i.index_name,
+                "size_bytes": i.index_size_bytes,
+                "size_pretty": i.index_size_pretty,
+                "detail": i.detail,
+                "recommendation": i.recommendation,
+            }
+            for i in issues
+        ]
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo("Index Audit")
+        click.echo("=" * 60)
+
+        if not issues:
+            click.echo(click.style("  No issues found.", fg="green"))
+        else:
+            for finding_type in Finding:
+                group = [i for i in issues if i.finding == finding_type]
+                if not group:
+                    continue
+                color = {"unused": "yellow", "duplicate": "red", "bloated": "cyan"}[finding_type.value]
+                click.echo(f"\n  {finding_type.value.upper()} ({len(group)}):")
+                for i in group:
+                    click.echo(
+                        click.style(f"    [{finding_type.value.upper()}]", fg=color)
+                        + f"  {i.index_name} on {i.table_name} ({i.index_size_pretty})"
+                    )
+                    click.echo(f"           {i.detail}")
+                    click.echo(click.style(f"           → {i.recommendation}", fg="white"))
+
+        total_waste = sum(i.index_size_bytes for i in issues)
+        if total_waste > 0:
+            click.echo(f"\n  {len(issues)} issue(s), ~{pretty_size(total_waste)} reclaimable")
+        else:
+            click.echo(f"\n  {len(issues)} issue(s)")
+
+        if any(i.finding == Finding.UNUSED for i in issues):
+            sys.exit(1)
+
+
+@cli.command("reconcile")
+@click.option("--json", "as_json", is_flag=True, help="Output results as JSON")
+@click.option("--all-tables", is_flag=True, help="Check all tables, not just sw_* prefixed")
+def reconcile_cmd(as_json, all_tables):
+    """Diff live PG schema against Django models and report mismatches.
+
+    Compares column names, types, and nullability for SW tables (or all
+    tables with --all-tables). Report-only — no mutations.
+
+    Examples:
+        swh reconcile
+        swh reconcile --json
+        swh reconcile --all-tables
+    """
+    import json as json_mod
+
+    from swh.reconcile import DiffKind, reconcile
+
+    dsn = settings.database.direct_psycopg2_dsn
+
+    try:
+        report = reconcile(dsn, sw_only=not all_tables)
+    except Exception as exc:
+        click.echo(click.style(f"  [FAIL]  could not connect: {exc}", fg="red"), err=True)
+        sys.exit(1)
+
+    if as_json:
+        data = {
+            "table_diffs": [
+                {"table": d.table, "kind": d.kind.value, "detail": d.detail}
+                for d in report.table_diffs
+            ],
+            "column_diffs": [
+                {
+                    "table": d.table,
+                    "column": d.column,
+                    "kind": d.kind.value,
+                    "model_type": d.model_type,
+                    "db_type": d.db_type,
+                    "detail": d.detail,
+                }
+                for d in report.column_diffs
+            ],
+            "issue_count": report.issue_count,
+        }
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo("Schema Reconciliation")
+        click.echo("=" * 60)
+
+        if not report.has_issues:
+            click.echo(click.style("  No schema drift detected.", fg="green"))
+        else:
+            if report.table_diffs:
+                click.echo("\n  TABLE-LEVEL:")
+                for d in report.table_diffs:
+                    color = "red" if d.kind == DiffKind.MISSING_TABLE else "yellow"
+                    click.echo(
+                        click.style(f"    [{d.kind.value}]", fg=color)
+                        + f"  {d.table}: {d.detail}"
+                    )
+
+            if report.column_diffs:
+                by_table = {}
+                for d in report.column_diffs:
+                    by_table.setdefault(d.table, []).append(d)
+
+                click.echo("\n  COLUMN-LEVEL:")
+                for table in sorted(by_table):
+                    click.echo(f"\n    {table}:")
+                    for d in by_table[table]:
+                        colors = {
+                            DiffKind.MISSING_IN_DB: "red",
+                            DiffKind.EXTRA_IN_DB: "yellow",
+                            DiffKind.TYPE_MISMATCH: "red",
+                            DiffKind.NULLABLE_MISMATCH: "cyan",
+                        }
+                        color = colors.get(d.kind, "white")
+                        click.echo(
+                            click.style(f"      [{d.kind.value}]", fg=color)
+                            + f"  {d.column}: {d.detail}"
+                        )
+
+        click.echo(f"\n  {report.issue_count} issue(s)")
+
+        if any(d.kind == DiffKind.MISSING_IN_DB for d in report.column_diffs) or \
+           any(d.kind == DiffKind.MISSING_TABLE for d in report.table_diffs):
+            sys.exit(1)
+
+
+@cli.command("tier-status")
+@click.option("--json", "as_json", is_flag=True, help="Output results as JSON")
+@click.option("--hot-window", type=int, default=1, help="Number of recent years considered 'hot' (default: 1)")
+def tier_status_cmd(as_json, hot_window):
+    """Show partition tier placement for partitioned fact tables.
+
+    Classifies each partition as hot, warm, or cold based on its range
+    boundary relative to the current year and flags partitions that
+    should be moved to a different tablespace.
+
+    Examples:
+        swh tier-status
+        swh tier-status --json
+        swh tier-status --hot-window 2
+    """
+    import json as json_mod
+
+    from swh.tiering import Tier, assess_tiers
+
+    dsn = settings.database.direct_psycopg2_dsn
+
+    try:
+        partitions = assess_tiers(dsn, hot_window=hot_window)
+    except Exception as exc:
+        click.echo(click.style(f"  [FAIL]  could not connect: {exc}", fg="red"), err=True)
+        sys.exit(1)
+
+    if as_json:
+        data = [
+            {
+                "parent_table": p.parent_table,
+                "partition": p.partition_name,
+                "tier": p.tier.value,
+                "range_start": p.range_start,
+                "range_end": p.range_end,
+                "tablespace": p.tablespace,
+                "recommended_tablespace": p.recommended_tablespace,
+                "needs_move": p.needs_move,
+                "size_bytes": p.size_bytes,
+                "size_pretty": p.size_pretty,
+                "index_count": p.index_count,
+                "is_default": p.is_default,
+            }
+            for p in partitions
+        ]
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo("Partition Tier Status")
+        click.echo("=" * 70)
+
+        if not partitions:
+            click.echo("  No partitioned fact tables found.")
+        else:
+            by_parent = {}
+            for p in partitions:
+                by_parent.setdefault(p.parent_table, []).append(p)
+
+            for parent in sorted(by_parent):
+                click.echo(f"\n  {parent}:")
+                for p in by_parent[parent]:
+                    tier_colors = {"hot": "red", "warm": "yellow", "cold": "cyan"}
+                    color = tier_colors[p.tier.value]
+                    range_str = f"{p.range_start} → {p.range_end}" if not p.is_default else "DEFAULT"
+                    move_flag = " ← MOVE" if p.needs_move else ""
+                    click.echo(
+                        click.style(f"    [{p.tier.value.upper():4s}]", fg=color)
+                        + f"  {p.partition_name} ({range_str}) {p.size_pretty}"
+                        + f" [{p.index_count} idx] @ {p.tablespace}"
+                        + click.style(move_flag, fg="red")
+                    )
+
+            needs_move = [p for p in partitions if p.needs_move]
+            if needs_move:
+                click.echo(f"\n  {len(needs_move)} partition(s) should be moved:")
+                for p in needs_move:
+                    click.echo(f"    ALTER TABLE {p.partition_name} SET TABLESPACE {p.recommended_tablespace};")
 
 
 if __name__ == "__main__":

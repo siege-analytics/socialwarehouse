@@ -38,6 +38,7 @@ override by constructing a different value and passing to
 | `catalog` | `str` | `SW_CATALOG` env or `socialwarehouse` | Logical catalog namespace |
 | `vintage` | `int` | `SW_VINTAGE` env or `2020` | Default vintage for asset runs |
 | `partition_state` | `Optional[str]` | `None` | Optional state code to partition runs by (e.g. `"TX"`); `None` = full-warehouse |
+| `hot_window_count` | `int` | `1` | Number of recent Census vintages to materialize to PostGIS (hot tier); vintages outside this window remain in Delta only |
 
 ### `SparkResource`
 
@@ -77,6 +78,11 @@ Reads connection params from `django.conf.settings.DATABASES['default']`.
 | `application_name` | `str` | `"socialwarehouse-orchestration"` | Postgres `application_name` for connection identification |
 | `statement_timeout_ms` | `int` | `300_000` (5min) | Postgres `statement_timeout` in milliseconds; override per-asset for long materializations |
 
+Methods:
+
+- `engine()` — context manager yielding a SQLAlchemy engine (for `to_sql` and general queries)
+- `raw_connection()` — context manager yielding a raw psycopg2 connection (for `COPY` operations)
+
 Usage:
 
 ```python
@@ -84,6 +90,12 @@ def _my_compute(context):
     postgis: PostGISResource = context.resources.postgis
     with postgis.engine() as engine:
         df.to_sql("table", engine, if_exists="append", index=False)
+
+    # For COPY operations (used by postgis_materialization_asset above the copy_threshold):
+    with postgis.raw_connection() as conn:
+        with conn.cursor() as cur:
+            cur.copy_expert("COPY table FROM STDIN WITH CSV HEADER", buffer)
+        conn.commit()
 ```
 
 ## Asset key conventions
@@ -126,6 +138,7 @@ def delta_table_asset(
     compute_fn: Callable[[AssetExecutionContext, SparkSession], None],
     description: Optional[str] = None,
     group_name: Optional[str] = None,  # defaults to layer
+    partitions_def: Optional[PartitionsDefinition] = None,  # SW#281 backfill support
 ) -> AssetsDefinition: ...
 ```
 
@@ -145,8 +158,10 @@ def postgis_materialization_asset(
     target_django_app_label: str,  # e.g. 'geo'
     target_django_model_name: str, # e.g. 'Address'
     compute_sql: Callable[[SparkSession, str], DataFrame],
+    copy_threshold: int = 100_000, # rows above which COPY is used instead of to_sql
     description: Optional[str] = None,
     group_name: str = "postgis",
+    partitions_def: Optional[PartitionsDefinition] = None,  # SW#281 backfill support
 ) -> AssetsDefinition: ...
 ```
 
@@ -156,9 +171,22 @@ def postgis_materialization_asset(
   `["postgis", app_label, model_name.lower()]`, dep on
   `["warehouse", source_layer, source_table]`, both `SparkResource`
   and `PostGISResource` injected.
-- Materialization metadata: `{"source_path": <delta-path>, "target_table": <db-table>, "row_count": int}`.
-- Currently uses `df.toPandas() ; pdf.to_sql(...)` — see SW#280 for
-  the planned COPY-based path for large datasets.
+- **Write method**: when `row_count > copy_threshold`, uses PostgreSQL
+  `COPY FROM STDIN WITH CSV HEADER` via psycopg2 (faster for large
+  datasets). Below the threshold, uses `pandas.to_sql()`.
+- **Observability metadata** in `MaterializeResult`:
+
+  | Key | Type | Description |
+  |---|---|---|
+  | `source_path` | `str` | Delta table path |
+  | `target_table` | `str` | PostGIS table name |
+  | `row_count` | `int` | Number of rows written |
+  | `write_method` | `str` | `"copy"` or `"to_sql"` |
+  | `copy_threshold` | `int` | Configured threshold |
+  | `timing_spark_read_s` | `float` | Seconds for Spark read + compute_sql |
+  | `timing_to_pandas_s` | `float` | Seconds for toPandas conversion |
+  | `timing_postgis_write_s` | `float` | Seconds for PostGIS write |
+  | `timing_total_s` | `float` | Total wall-clock seconds |
 
 ## Common errors and fixes
 
@@ -172,7 +200,7 @@ def postgis_materialization_asset(
 | `py4j.protocol.Py4JJavaError: ... Sedona` | Sedona not registered, but asset uses spatial operations | Set `SparkResource(enable_sedona=True)` (default) and confirm `apache-sedona` is installed (`pip install -e ".[spark]"`) |
 | Asset graph in UI is empty / "no assets" | Definitions module not discovered | Verify launch command: `dagster dev -m socialwarehouse.orchestration` (not `python -m`); confirm `socialwarehouse.orchestration.defs` exists |
 | Sensor enabled but never fires | Daemon not running OR sensor probe failing | `dagster dev` output should show "daemon running"; check Sensors tab → Cursor → recent evaluations for errors |
-| `to_sql` extremely slow / OOM | Materialization above ~500K rows hits the `toPandas` bottleneck | Track via SW#280 — switch to Parquet staging + Postgres COPY |
+| `to_sql` extremely slow / OOM | Materialization above ~500K rows hits the `toPandas` bottleneck | Set `copy_threshold` (default 100K) — loads above the threshold automatically use PostgreSQL COPY (SW#280) |
 
 ## Pinned Dagster version
 
@@ -192,6 +220,101 @@ requires verifying the API surface this layer uses
 `Definitions`, `define_asset_job`, `ScheduleDefinition`,
 `AssetSelection.groups`, `@sensor`, `SensorResult`, `RunRequest`,
 `SkipReason`, `SourceAsset`) is still stable.
+
+## Census vintage backfill (SW#281)
+
+The orchestration layer supports backfilling historical Census
+vintages via Dagster's partitioned-asset mechanism. Each vintage
+(ACS 5-year or Decennial) is a partition key; Dagster's backfill
+UI or CLI lets you select which vintages to materialize.
+
+### Partition keys
+
+Defined in `socialwarehouse.orchestration.partitions.CENSUS_VINTAGE_PARTITIONS`:
+
+| Key | Survey | Vintage |
+|---|---|---|
+| `dec_2020` | Decennial | 2020 |
+| `dec_2010` | Decennial | 2010 |
+| `acs5_2022` | ACS 5-year | 2018–2022 |
+| `acs5_2021` | ACS 5-year | 2017–2021 |
+| `acs5_2019` | ACS 5-year | 2015–2019 |
+| `acs5_2014` | ACS 5-year | 2010–2014 |
+| `acs5_2009` | ACS 5-year | 2005–2009 |
+
+### Hot/cold tier policy
+
+`WarehouseConfig.hot_window_count` (default 1) controls how many
+recent vintages materialize to PostGIS. Vintages outside the hot
+window remain in Delta Lake only (cold tier), per
+`docs/production-operations.md` section 5.
+
+Use `socialwarehouse.orchestration.partitions.is_hot_vintage()` in
+PostGIS compute functions to gate materialization:
+
+```python
+from socialwarehouse.orchestration.partitions import is_hot_vintage, parse_vintage_partition
+
+def _my_postgis_compute(context, spark, source_path):
+    if context.has_partition_key:
+        p = parse_vintage_partition(context.partition_key)
+        warehouse = context.resources.warehouse
+        if not is_hot_vintage(p.vintage_year, warehouse.vintage, warehouse.hot_window_count):
+            context.log.info("Skipping cold-tier vintage %s", context.partition_key)
+            return spark.createDataFrame([], schema=...)  # empty DF -> no PostGIS write
+    ...
+```
+
+### Making an asset partitioned
+
+Pass `partitions_def=CENSUS_VINTAGE_PARTITIONS` to the factory:
+
+```python
+from socialwarehouse.orchestration.partitions import CENSUS_VINTAGE_PARTITIONS
+
+my_asset = delta_table_asset(
+    layer="gold",
+    table="my_enriched",
+    deps=["silver/my_typed"],
+    compute_fn=_my_compute,
+    partitions_def=CENSUS_VINTAGE_PARTITIONS,
+)
+```
+
+Inside `compute_fn`, read the partition key:
+
+```python
+def _my_compute(context, spark):
+    if context.has_partition_key:
+        from socialwarehouse.orchestration.partitions import parse_vintage_partition
+        partition = parse_vintage_partition(context.partition_key)
+        vintage = partition.vintage_year
+    else:
+        vintage = 2020  # fallback for non-partitioned runs
+```
+
+### Running a backfill
+
+Via Dagit:
+1. Navigate to the `geo_vintage_backfill` job
+2. Click "Launch backfill"
+3. Select the partition keys to materialize
+
+Via CLI:
+
+```bash
+# Single vintage
+dagster job backfill --job geo_vintage_backfill --partition dec_2010
+
+# Multiple vintages
+dagster job backfill --job geo_vintage_backfill --partitions dec_2010,acs5_2014,acs5_2009
+```
+
+### Backwards compatibility
+
+The `partitions_def` parameter is opt-in. Assets that omit it
+continue to work exactly as before — non-partitioned, single-vintage
+materialization via `WarehouseConfig.vintage`.
 
 ## See also
 

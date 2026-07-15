@@ -69,6 +69,53 @@ def test_postgis_materialization_factory_produces_assets_definition():
     assert AssetKey(["warehouse", "gold", "my_gold"]) in a.dependency_keys
 
 
+def test_postgis_materialization_factory_accepts_copy_threshold():
+    """postgis_materialization_asset accepts the copy_threshold parameter."""
+    from socialwarehouse.orchestration.asset_factories import postgis_materialization_asset
+
+    def _noop(spark, source_path):
+        pass
+
+    a = postgis_materialization_asset(
+        source_layer="gold",
+        source_table="my_gold",
+        target_django_app_label="geo",
+        target_django_model_name="Thing",
+        compute_sql=_noop,
+        copy_threshold=50_000,
+    )
+    assert isinstance(a, dagster.AssetsDefinition)
+
+
+def test_copy_to_postgis_helper():
+    """_copy_to_postgis serializes a DataFrame to CSV and calls copy_expert."""
+    from unittest.mock import MagicMock
+
+    import pandas as pd
+
+    from socialwarehouse.orchestration.asset_factories import _copy_to_postgis
+
+    pdf = pd.DataFrame({"col_a": [1, 2, 3], "col_b": ["x", "y", "z"]})
+    mock_postgis = MagicMock()
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_postgis.raw_connection.return_value.__enter__ = MagicMock(return_value=mock_conn)
+    mock_postgis.raw_connection.return_value.__exit__ = MagicMock(return_value=False)
+    mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+    mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+    _copy_to_postgis(pdf, "test_table", mock_postgis)
+
+    mock_cursor.copy_expert.assert_called_once()
+    call_args = mock_cursor.copy_expert.call_args
+    sql = call_args[0][0]
+    assert 'COPY "test_table"' in sql
+    assert "FROM STDIN WITH CSV HEADER" in sql
+    assert '"col_a"' in sql
+    assert '"col_b"' in sql
+    mock_conn.commit.assert_called_once()
+
+
 def test_definitions_object_loads():
     """The Definitions object at socialwarehouse.orchestration.defs loads without raising."""
     from socialwarehouse.orchestration import defs

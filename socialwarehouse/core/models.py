@@ -3,6 +3,17 @@ import uuid
 from django.db import models
 from django.utils import timezone
 
+from socialwarehouse.core.agent import Agent, AgentSubtype  # noqa: F401
+from socialwarehouse.core.attestation import (  # noqa: F401
+    Attestation,
+    FECAttestation,
+)
+from socialwarehouse.core.attestation_links import (  # noqa: F401
+    AttestationJunction,
+    AttestationSubtypeLink,
+    ResolutionAttestation,
+)
+
 
 class EntityIdentifier(models.Model):
     """Append-only log of entity identifiers for cross-source resolution.

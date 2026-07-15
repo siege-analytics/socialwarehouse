@@ -5,12 +5,18 @@ from socialwarehouse.core.mixins import (
     generate_entity_uuid4,
 )
 
-
 EVENT_TYPE_CHOICES = [
     ("transaction", "Transaction"),
     ("corporate", "Corporate Event"),
     ("spatiotemporal", "Spatio-Temporal Event"),
     ("electoral", "Electoral Event"),
+]
+
+EVENT_STATE_CHOICES = [
+    ("active", "Active"),
+    ("amended", "Amended"),
+    ("withdrawn", "Withdrawn"),
+    ("superseded", "Superseded"),
 ]
 
 AGENT_TYPE_CHOICES = [
@@ -82,6 +88,41 @@ class Event(SourceAwareModel):
         help_text="Event year, derived from event_date",
     )
     description = models.TextField(blank=True, default="")
+
+    # Canonicalization layer (SW#349). All event subtypes inherit these by
+    # being attached to an Event. canonical_attestation is a fast-lookup
+    # cache pointing at the winning Attestation; the source of truth is
+    # Attestation.is_canonical (partial-unique-enforced on the Attestation
+    # side). attestation_disagreement flags conflicting source attestations.
+    canonical_attestation = models.ForeignKey(
+        "sw_core.Attestation",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="canonical_for_events",
+        help_text="Fast-lookup cache of the canonical attestation; truth is Attestation.is_canonical",
+    )
+    attestation_disagreement = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="True when source attestations for this event conflict",
+    )
+    is_amended = models.BooleanField(
+        default=False,
+        help_text="True when this event has been amended by a later revision",
+    )
+    amendment_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of amendments applied to this event",
+    )
+    event_state = models.CharField(
+        max_length=20,
+        choices=EVENT_STATE_CHOICES,
+        default="active",
+        db_index=True,
+        help_text="active / amended / withdrawn / superseded",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -96,6 +137,10 @@ class Event(SourceAwareModel):
             models.Index(
                 fields=["event_type", "jurisdiction_state", "year"],
                 name="idx_event_type_state_year",
+            ),
+            models.Index(
+                fields=["event_type", "event_state"],
+                name="idx_event_type_state",
             ),
         ]
 

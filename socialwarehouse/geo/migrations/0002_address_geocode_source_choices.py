@@ -2,8 +2,8 @@
 
 Metadata-only change: choices add does not validate existing rows;
 only admin-form writes for new/edited rows enforce the choice set.
-Existing rows with non-canonical values (legacy data, vendor-written
-'Census' from GST submodule) are preserved unchanged.
+Existing rows with non-canonical values (legacy data) are preserved
+unchanged.
 
 The choices canonical-set lives in
 ``socialwarehouse.geo.models.address.GEOCODE_SOURCE_CHOICES``.

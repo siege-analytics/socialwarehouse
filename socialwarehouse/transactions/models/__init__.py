@@ -3,8 +3,9 @@ from .transactions import (
     Expenditure,
     Obligation,
     ObligationEvent,
-    Transfer,
+    Transaction,
     TransactionGroup,
+    Transfer,
 )
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "Transfer",
     "ObligationEvent",
     "Obligation",
+    "Transaction",
     "TransactionGroup",
 ]

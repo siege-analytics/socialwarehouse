@@ -39,18 +39,17 @@ logger = logging.getLogger("socialwarehouse.geo")
 #    is ready, producing AppRegistryNotReady. Method-local imports defer
 #    until handle() runs (which is post-setup).
 #
-# 2. The siege_utilities boundary models live in a vendor submodule
-#    (vendor/geodjango_simple_template). Top-level imports here pull the
-#    submodule into the import graph of every `python manage.py` invocation,
-#    inflating startup cost for unrelated commands.
+# 2. The siege_utilities boundary models are heavyweight. Top-level
+#    imports here pull them into the import graph of every
+#    `python manage.py` invocation, inflating startup cost for
+#    unrelated commands.
 #
 # 3. Some sites (RedistrictingPlan, plan-aware lookups) are conditional —
 #    only the plan-aware code path needs them. Method-local imports keep
 #    the legacy-mode code path independent of the plan-aware dependencies.
 #
 # If you need to add a top-level import, verify the symbol isn't a Django
-# model registered after Django setup, and that adding it doesn't pull in
-# the GST submodule for non-GST-using commands.
+# model registered after Django setup.
 
 
 class Command(BaseCommand):

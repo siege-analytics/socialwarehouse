@@ -126,7 +126,11 @@ jobs:
           done
 
       - name: Django check inside container
-        run: docker compose run --rm python-computation python manage.py check
+        # --no-deps: `manage.py check` is a static check (no DB connection), so it
+        # must not drag up python-computation's depends_on (pgbouncer/neo4j). Those
+        # publish host ports and caused "Bind 0.0.0.0:6432 already allocated" on the
+        # runner. Full-stack boot health is a separate concern (see #364).
+        run: docker compose run --rm --no-deps python-computation python manage.py check
 
       - name: Tear down
         if: always()

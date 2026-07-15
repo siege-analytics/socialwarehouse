@@ -1,5 +1,6 @@
 from django.db import models
 
+from socialwarehouse.core.agent import AgentSubtype
 from socialwarehouse.core.mixins import IdentifiableModel, SourceAwareModel
 
 
@@ -14,7 +15,7 @@ COMMITTEE_TYPE_CHOICES = [
 ]
 
 
-class Committee(SourceAwareModel, IdentifiableModel):
+class Committee(SourceAwareModel, IdentifiableModel, AgentSubtype):
     """Regulatory fundraising vehicle with lifecycle tracking.
 
     Covers PACs, party committees, campaign committees, and similar

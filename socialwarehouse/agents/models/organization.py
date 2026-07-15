@@ -1,5 +1,6 @@
 from django.db import models
 
+from socialwarehouse.core.agent import AgentSubtype
 from socialwarehouse.core.mixins import IdentifiableModel, SourceAwareModel
 
 
@@ -10,7 +11,7 @@ INDUSTRY_SYSTEM_CHOICES = [
 ]
 
 
-class Organization(SourceAwareModel, IdentifiableModel):
+class Organization(SourceAwareModel, IdentifiableModel, AgentSubtype):
     """Employer, vendor, consultant, union, corporation, or other entity.
 
     General civic concept covering non-committee organizational entities.

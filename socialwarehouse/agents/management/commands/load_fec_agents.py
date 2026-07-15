@@ -25,9 +25,10 @@ Idempotent: entity_uuid is unique per table, so ``ON CONFLICT DO NOTHING``
 skips rows already present. Load against CURRENT gold now; re-run when
 corrected gold lands.
 
-Attestation (gold provenance -> core.FECAttestation) is a SEPARATE loader:
-gold entities are resolved aggregates, not FEC forms, so the attestation
-shape is under design review. This command loads entity dimensions only.
+Entity-level provenance is a SEPARATE command, ``load_fec_attestations``:
+gold entities are resolved aggregates, not FEC forms, so they are attested
+with the base ``core.Attestation`` (shape A), NOT ``FECAttestation``. This
+command loads the entity dimensions only.
 """
 
 from __future__ import annotations
@@ -49,7 +50,16 @@ SPECS = {
         sub_cols="name, committee_type, source_system_id, formation_date, termination_date, name_history",
         sub_vals=(
             "coalesce(nullif(trim(g.committee_name),''),'(unnamed committee)'), "
-            "coalesce(nullif(trim(g.committee_type),''),'other'), "
+            # Map raw FEC committee_type codes -> Committee.COMMITTEE_TYPE_CHOICES
+            # vocabulary (H/S/P=campaign, N/Q=pac, O/U=super_pac, V/W=hybrid,
+            # X/Y/Z=party, everything else incl blank/null=other).
+            "case upper(nullif(trim(g.committee_type),'')) "
+            "when 'H' then 'campaign' when 'S' then 'campaign' when 'P' then 'campaign' "
+            "when 'N' then 'pac' when 'Q' then 'pac' "
+            "when 'O' then 'super_pac' when 'U' then 'super_pac' "
+            "when 'V' then 'hybrid' when 'W' then 'hybrid' "
+            "when 'X' then 'party' when 'Y' then 'party' when 'Z' then 'party' "
+            "else 'other' end, "
             "trim(g.fec_committee_id), g.eff_start_dt, g.eff_stop_dt, '[]'::jsonb"
         ),
     ),
@@ -72,7 +82,10 @@ SPECS = {
         sub_vals=(
             "coalesce(nullif(trim(g.name),''),'(unnamed)'), "
             "coalesce(trim(g.first_name),''), coalesce(trim(g.last_name),''), '', '', "
-            "nullif(regexp_replace(coalesce(g.birth_year,''),'[^0-9]','','g'),'')::smallint"
+            # Only accept a clean 4-digit year; anything else -> NULL (avoids a
+            # single dirty value like '1961-1962' overflowing smallint and
+            # aborting the whole batch on a corrected-gold re-run).
+            "case when trim(g.birth_year) ~ '^[0-9]{4}$' then trim(g.birth_year)::smallint end"
         ),
     ),
     "individual": dict(
@@ -146,6 +159,12 @@ class Command(BaseCommand):
                 agents = cur.rowcount
 
                 # 2) Typed subtype, linked to its Agent via the deterministic uuid.
+                #    ON CONFLICT DO UPDATE refreshes the descriptive columns so a
+                #    re-run against corrected gold updates names/types in place
+                #    (identity — entity_uuid/agent_id — is immutable and untouched).
+                set_clause = ", ".join(
+                    f"{c.strip()} = EXCLUDED.{c.strip()}" for c in s["sub_cols"].split(",")
+                )
                 cur.execute(f"""
                     INSERT INTO {s['target']}
                         (data_source, jurisdiction_level, jurisdiction_state,
@@ -156,7 +175,8 @@ class Command(BaseCommand):
                     FROM gold.{s['table']} g
                     JOIN sw_agent a ON a.entity_uuid = {agent_uuid}
                     WHERE {s['where']}
-                    ON CONFLICT (entity_uuid) DO NOTHING
+                    ON CONFLICT (entity_uuid) DO UPDATE SET
+                        {set_clause}, updated_at = now()
                 """)
                 subs = cur.rowcount
 

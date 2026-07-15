@@ -7,10 +7,12 @@ tables in the test DB and exercise the real commands, pinning:
 
 * identity — the in-DB ``uuid_generate_v5`` matches ``generate_entity_uuid5``
   (Agent = uuid5(subtype, ds, src); subtype = uuid5(ds, src)),
-* the Agent↔subtype FK linkage,
-* model-default handling (committee_type -> 'other' when gold is blank),
+* the Agent↔subtype FK linkage across committee / person / organization,
+* mapping of raw FEC ``committee_type`` codes -> the model choice vocabulary,
+* birth_year hardening (dirty/non-4-digit -> NULL, no smallint overflow),
+* re-run refresh (ON CONFLICT DO UPDATE) of descriptive fields,
 * attestation shape A — base ``core.Attestation`` (kind='fec', canonical) with
-  honest provenance only (source_catalog/source_system/synced_at, tier unknown),
+  honest provenance only, and congress-sourced officeholders EXCLUDED,
 * idempotency — re-running nets zero new rows / enriches canonical in place.
 
 Requires the ``uuid-ossp`` extension; the postgis CI image ships it and creates
@@ -33,8 +35,9 @@ class _GoldFixture(TransactionTestCase):
         with connection.cursor() as c:
             c.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
             c.execute("CREATE SCHEMA IF NOT EXISTS gold")
-            c.execute("DROP TABLE IF EXISTS gold.committee_entities")
-            c.execute("DROP TABLE IF EXISTS gold.candidate_entities")
+            for t in ("committee_entities", "candidate_entities",
+                      "officeholder_entities", "vendor_entities"):
+                c.execute(f"DROP TABLE IF EXISTS gold.{t}")
             c.execute("""
                 CREATE TABLE gold.committee_entities (
                     catalog text, id text, fec_committee_id text, committee_name text,
@@ -47,11 +50,22 @@ class _GoldFixture(TransactionTestCase):
                     first_name text, last_name text, name_suffix text, _synced_at timestamp)
             """)
             c.execute("""
+                CREATE TABLE gold.officeholder_entities (
+                    catalog text, id text, bioguide_id text, name text,
+                    first_name text, last_name text, birth_year text, _synced_at timestamp)
+            """)
+            c.execute("""
+                CREATE TABLE gold.vendor_entities (
+                    catalog text, id text, name text, _synced_at timestamp)
+            """)
+            c.execute("""
                 INSERT INTO gold.committee_entities
                     (catalog, fec_committee_id, committee_name, committee_type, _synced_at)
                 VALUES
                     ('FEC', 'C00000001', 'TEST PAC', 'Q', '2026-03-11 15:59:59'),
                     ('FEC', 'C00000002', 'BLANK-TYPE PAC', '', '2026-03-11 15:59:59'),
+                    ('FEC', 'C00000003', 'JANE FOR HOUSE', 'H', '2026-03-11 15:59:59'),
+                    ('FEC', 'C00000004', 'STATE PARTY', 'X', '2026-03-11 15:59:59'),
                     ('FEC', '', 'NO ID PAC', 'N', '2026-03-11 15:59:59')
             """)
             c.execute("""
@@ -60,11 +74,23 @@ class _GoldFixture(TransactionTestCase):
                 VALUES
                     ('FEC', 'H0TX00001', 'DOE, JANE', 'JANE', 'DOE', '2026-03-11 15:59:59')
             """)
+            c.execute("""
+                INSERT INTO gold.officeholder_entities
+                    (catalog, bioguide_id, name, first_name, last_name, birth_year, _synced_at)
+                VALUES
+                    ('congress_gov', 'D000001', 'DOE, JOHN', 'JOHN', 'DOE', '1961', '2026-03-11 15:59:59'),
+                    ('congress_gov', 'D000002', 'ROE, SUE', 'SUE', 'ROE', '1961-1962', '2026-03-11 15:59:59')
+            """)
+            c.execute("""
+                INSERT INTO gold.vendor_entities (catalog, id, name, _synced_at)
+                VALUES ('FEC', 'V-0001', 'ACME PRINTING', '2026-03-11 15:59:59')
+            """)
 
     def tearDown(self):
         with connection.cursor() as c:
-            c.execute("DROP TABLE IF EXISTS gold.committee_entities")
-            c.execute("DROP TABLE IF EXISTS gold.candidate_entities")
+            for t in ("committee_entities", "candidate_entities",
+                      "officeholder_entities", "vendor_entities"):
+                c.execute(f"DROP TABLE IF EXISTS gold.{t}")
 
 
 class TestLoadFecAgents(_GoldFixture):
@@ -75,9 +101,9 @@ class TestLoadFecAgents(_GoldFixture):
 
         call_command("load_fec_agents", "--entity=committee", verbosity=0)
 
-        # The blank fec_committee_id row is filtered out.
-        self.assertEqual(Agent.objects.filter(subtype="committee").count(), 2)
-        self.assertEqual(Committee.objects.count(), 2)
+        # The blank fec_committee_id row is filtered out (4 of 5 load).
+        self.assertEqual(Agent.objects.filter(subtype="committee").count(), 4)
+        self.assertEqual(Committee.objects.count(), 4)
 
         c1 = Committee.objects.select_related("agent").get(source_system_id="C00000001")
         self.assertEqual(c1.name, "TEST PAC")
@@ -88,12 +114,18 @@ class TestLoadFecAgents(_GoldFixture):
         self.assertEqual(c1.agent.subtype, "committee")
         self.assertEqual(c1.agent.lifecycle_state, "active")
 
-    def test_blank_committee_type_defaults_to_other(self):
+    def test_committee_type_maps_fec_codes_to_choice_vocabulary(self):
         from socialwarehouse.agents.models import Committee
 
         call_command("load_fec_agents", "--entity=committee", verbosity=0)
-        c2 = Committee.objects.get(source_system_id="C00000002")
-        self.assertEqual(c2.committee_type, "other")
+        self.assertEqual(Committee.objects.get(source_system_id="C00000001").committee_type, "pac")       # Q
+        self.assertEqual(Committee.objects.get(source_system_id="C00000003").committee_type, "campaign")  # H
+        self.assertEqual(Committee.objects.get(source_system_id="C00000004").committee_type, "party")     # X
+        self.assertEqual(Committee.objects.get(source_system_id="C00000002").committee_type, "other")     # blank
+
+        # Every loaded committee_type is within the model's declared vocabulary.
+        valid = {v for v, _ in Committee._meta.get_field("committee_type").choices}
+        self.assertTrue(set(Committee.objects.values_list("committee_type", flat=True)) <= valid)
 
     def test_candidate_loads_as_person(self):
         from socialwarehouse.agents.models import Person
@@ -110,12 +142,53 @@ class TestLoadFecAgents(_GoldFixture):
             p.agent.entity_uuid, generate_entity_uuid5("person", "fec", "H0TX00001")
         )
 
+    def test_vendor_loads_as_organization(self):
+        from socialwarehouse.agents.models import Organization
+        from socialwarehouse.core.agent import Agent
+
+        call_command("load_fec_agents", "--entity=vendor", verbosity=0)
+        self.assertEqual(Agent.objects.filter(subtype="organization").count(), 1)
+        org = Organization.objects.select_related("agent").get(source_record_id="V-0001")
+        self.assertEqual(org.name, "ACME PRINTING")
+        self.assertEqual(org.industry_system, "naics")
+        self.assertEqual(org.entity_uuid, generate_entity_uuid5("fec", "V-0001"))
+        self.assertEqual(
+            org.agent.entity_uuid, generate_entity_uuid5("organization", "fec", "V-0001")
+        )
+
+    def test_officeholder_birth_year_dirty_value_is_nulled(self):
+        from socialwarehouse.agents.models import Person
+
+        # 'D000002' has birth_year '1961-1962' — must NOT overflow smallint; -> NULL.
+        call_command("load_fec_agents", "--entity=officeholder", verbosity=0)
+        self.assertEqual(Person.objects.get(source_record_id="D000001").birth_year, 1961)
+        self.assertIsNone(Person.objects.get(source_record_id="D000002").birth_year)
+        # Officeholder entities are congress-sourced.
+        self.assertEqual(
+            Person.objects.get(source_record_id="D000001").agent.data_source, "congress"
+        )
+
+    def test_reload_refreshes_descriptive_fields(self):
+        from socialwarehouse.agents.models import Committee
+
+        call_command("load_fec_agents", "--entity=committee", verbosity=0)
+        # Simulate corrected gold: rename + retype an existing committee.
+        with connection.cursor() as c:
+            c.execute("UPDATE gold.committee_entities SET committee_name='RENAMED PAC', "
+                      "committee_type='O' WHERE fec_committee_id='C00000001'")
+        call_command("load_fec_agents", "--entity=committee", verbosity=0)
+
+        c1 = Committee.objects.get(source_system_id="C00000001")
+        self.assertEqual(c1.name, "RENAMED PAC")
+        self.assertEqual(c1.committee_type, "super_pac")  # 'O' -> super_pac
+        self.assertEqual(Committee.objects.count(), 4)  # no duplication
+
     def test_idempotent(self):
         from socialwarehouse.core.agent import Agent
 
         call_command("load_fec_agents", "--entity=committee", verbosity=0)
         call_command("load_fec_agents", "--entity=committee", verbosity=0)
-        self.assertEqual(Agent.objects.filter(subtype="committee").count(), 2)
+        self.assertEqual(Agent.objects.filter(subtype="committee").count(), 4)
 
 
 class TestLoadFecAttestations(_GoldFixture):
@@ -126,7 +199,7 @@ class TestLoadFecAttestations(_GoldFixture):
         call_command("load_fec_agents", "--entity=committee", verbosity=0)
         call_command("load_fec_attestations", "--entity=committee", verbosity=0)
 
-        self.assertEqual(Attestation.objects.filter(entity_subtype="committee").count(), 2)
+        self.assertEqual(Attestation.objects.filter(entity_subtype="committee").count(), 4)
         att = Attestation.objects.get(
             entity_id=generate_entity_uuid5("fec", "C00000001"),
             entity_subtype="committee",
@@ -141,6 +214,18 @@ class TestLoadFecAttestations(_GoldFixture):
         # No form-level fields (base Attestation, not FECAttestation).
         self.assertNotIn("fec_form_type", att.attested_values)
 
+    def test_officeholder_excluded_from_fec_attestations(self):
+        from socialwarehouse.core.attestation import Attestation
+
+        # Load the officeholder ENTITY, then run the FEC attestation loader for all.
+        call_command("load_fec_agents", "--entity=officeholder", verbosity=0)
+        call_command("load_fec_attestations", "--entity=all", verbosity=0)
+
+        # The congress-sourced officeholder must NOT receive an FEC attestation
+        # (would be a contradictory provenance record).
+        officeholder_id = generate_entity_uuid5("congress", "D000001")
+        self.assertEqual(Attestation.objects.filter(entity_id=officeholder_id).count(), 0)
+
     def test_one_canonical_per_entity_and_idempotent_enrich(self):
         from socialwarehouse.core.attestation import Attestation
 
@@ -149,7 +234,7 @@ class TestLoadFecAttestations(_GoldFixture):
         call_command("load_fec_attestations", "--entity=committee", verbosity=0)
 
         # Re-run enriches in place (ON CONFLICT DO UPDATE) — no duplication.
-        self.assertEqual(Attestation.objects.filter(entity_subtype="committee").count(), 2)
+        self.assertEqual(Attestation.objects.filter(entity_subtype="committee").count(), 4)
         canon = Attestation.objects.filter(
             entity_id=generate_entity_uuid5("fec", "C00000001"),
             entity_subtype="committee",

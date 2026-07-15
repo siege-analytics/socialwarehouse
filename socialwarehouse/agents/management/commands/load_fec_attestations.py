@@ -36,15 +36,22 @@ from socialwarehouse.core.mixins import SW_NAMESPACE
 
 # (subtype, data_source, gold table, source-id expr, filter). Source identity
 # must match the entity load so entity_id lines up with the subtype's uuid.
+#
+# This command emits FEC-kind attestations only, so it covers ONLY FEC-catalog
+# entities. Officeholder entities are congress/bioguide-sourced (ds='congress',
+# gold catalog 'congress_gov'), so attesting them as kind='fec'/source_system
+# 'fec_bulk' would be a contradictory, dishonest provenance record — they are
+# deliberately excluded here and get their provenance from a future
+# congress-provenance loader. (The officeholder ENTITY still loads via
+# load_fec_agents; only its FEC attestation is omitted.)
 ATT_SPECS = {
-    "committee":    ("committee",    "fec",      "committee_entities",    "g.fec_committee_id", "g.fec_committee_id is not null and g.fec_committee_id <> ''"),
-    "candidate":    ("person",       "fec",      "candidate_entities",    "g.fec_candidate_id", "g.fec_candidate_id is not null and g.fec_candidate_id <> ''"),
-    "officeholder": ("person",       "congress", "officeholder_entities", "g.bioguide_id",      "g.bioguide_id is not null and g.bioguide_id <> ''"),
-    "individual":   ("person",       "fec",      "individual_entities",   "g.id",               "g.id is not null and g.id <> ''"),
-    "vendor":       ("organization", "fec",      "vendor_entities",       "g.id",               "g.id is not null and g.id <> ''"),
-    "employer":     ("organization", "fec",      "employer_entities",     "g.id",               "g.id is not null and g.id <> ''"),
+    "committee":  ("committee",    "fec", "committee_entities",  "g.fec_committee_id", "g.fec_committee_id is not null and g.fec_committee_id <> ''"),
+    "candidate":  ("person",       "fec", "candidate_entities",  "g.fec_candidate_id", "g.fec_candidate_id is not null and g.fec_candidate_id <> ''"),
+    "individual": ("person",       "fec", "individual_entities", "g.id",               "g.id is not null and g.id <> ''"),
+    "vendor":     ("organization", "fec", "vendor_entities",     "g.id",               "g.id is not null and g.id <> ''"),
+    "employer":   ("organization", "fec", "employer_entities",   "g.id",               "g.id is not null and g.id <> ''"),
 }
-ORDER = ["committee", "candidate", "officeholder", "vendor", "employer", "individual"]
+ORDER = ["committee", "candidate", "vendor", "employer", "individual"]
 
 
 class Command(BaseCommand):

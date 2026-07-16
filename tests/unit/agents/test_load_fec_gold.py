@@ -36,7 +36,8 @@ class _GoldFixture(TransactionTestCase):
             c.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
             c.execute("CREATE SCHEMA IF NOT EXISTS gold")
             for t in ("committee_entities", "candidate_entities",
-                      "officeholder_entities", "vendor_entities"):
+                      "officeholder_entities", "vendor_entities",
+                      "employer_entities", "individual_entities"):
                 c.execute(f"DROP TABLE IF EXISTS gold.{t}")
             c.execute("""
                 CREATE TABLE gold.committee_entities (
@@ -57,6 +58,24 @@ class _GoldFixture(TransactionTestCase):
             c.execute("""
                 CREATE TABLE gold.vendor_entities (
                     catalog text, id text, name text, _synced_at timestamp)
+            """)
+            # employer + individual share vendor/person shape; needed so
+            # `--entity all` (which iterates every FEC spec) has all tables.
+            c.execute("""
+                CREATE TABLE gold.employer_entities (
+                    catalog text, id text, name text, _synced_at timestamp)
+            """)
+            c.execute("""
+                CREATE TABLE gold.individual_entities (
+                    catalog text, id text, name text, _synced_at timestamp)
+            """)
+            c.execute("""
+                INSERT INTO gold.employer_entities (catalog, id, name, _synced_at)
+                VALUES ('FEC', 'E-0001', 'GLOBEX CORP', '2026-03-11 15:59:59')
+            """)
+            c.execute("""
+                INSERT INTO gold.individual_entities (catalog, id, name, _synced_at)
+                VALUES ('FEC', 'IND-0001', 'SMITH, PAT', '2026-03-11 15:59:59')
             """)
             c.execute("""
                 INSERT INTO gold.committee_entities
@@ -89,7 +108,8 @@ class _GoldFixture(TransactionTestCase):
     def tearDown(self):
         with connection.cursor() as c:
             for t in ("committee_entities", "candidate_entities",
-                      "officeholder_entities", "vendor_entities"):
+                      "officeholder_entities", "vendor_entities",
+                      "employer_entities", "individual_entities"):
                 c.execute(f"DROP TABLE IF EXISTS gold.{t}")
 
 

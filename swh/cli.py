@@ -81,7 +81,7 @@ def download_census(state, all_states, year, boundary_type):
         swh download-census --state 48 --state 06 -b tabblock20 -b county
         swh download-census --all-states
     """
-    from swh.census import download_census_boundaries, download_all_states
+    from swh.census import download_all_states, download_census_boundaries
 
     boundary_types = list(boundary_type) if boundary_type else None
     total_failed = 0
@@ -131,7 +131,7 @@ def load_census(state, all_states, year, boundary_type, schema):
         swh load-census --state 48
         swh load-census --all-states --schema census
     """
-    from swh.census import load_census_to_postgis, load_all_states_to_postgis
+    from swh.census import load_all_states_to_postgis, load_census_to_postgis
 
     boundary_types = list(boundary_type) if boundary_type else None
     total_failed = 0
@@ -197,7 +197,7 @@ def load_voters(filepath, table, lon_col, lat_col, chunk_size, schema, encoding,
         swh load-voters /data/inputs/VA_voters.csv -t voters_va --chunk-size 100000
         swh load-voters /data/inputs/non_ts_voters.csv -t voters_x --no-targetsmart-dtypes
     """
-    from swh.voters import load_voter_file, TARGETSMART_DEFAULT_DTYPES
+    from swh.voters import TARGETSMART_DEFAULT_DTYPES, load_voter_file
 
     dtype = TARGETSMART_DEFAULT_DTYPES if targetsmart_dtypes else None
 
@@ -415,6 +415,31 @@ def materialize_electoral_all():
         click.echo(f"Materialization complete: {counts}")
     finally:
         spark.stop()
+
+
+@cli.command("materialize-loc")
+@click.option("--no-historical", is_flag=True, help="Current legislators only (skip historical)")
+@click.option("--batch-size", default=500, type=int, help="Upsert batch size")
+def materialize_loc(no_historical, batch_size):
+    """Ingest Library-of-Congress / congress-legislators into the ontology (#73).
+
+    Fetches the public unitedstates/congress-legislators dataset and
+    upserts Person + Agent hub + external identifiers (bioguide, FEC
+    candidate ids, ...) + a canonical bio Attestation + congressional
+    Office/OfficeTerms. No Spark needed (the dataset is ~13k JSON rows);
+    the write is Django-ORM and idempotent.
+
+    Examples:
+        swh materialize-loc                 # current + historical
+        swh materialize-loc --no-historical # sitting members only
+    """
+    from swh.loc.bronze import fetch_legislators
+    from swh.loc.materialize import materialize_legislators
+
+    records = fetch_legislators(include_historical=not no_historical)
+    click.echo(f"Fetched {len(records):,} legislator records")
+    counts = materialize_legislators(records, batch_size=batch_size)
+    click.echo(f"Materialized: {counts}")
 
 
 @materialize_electoral.command("backfill-addresses")
@@ -828,7 +853,7 @@ def tier_status_cmd(as_json, hot_window):
     """
     import json as json_mod
 
-    from swh.tiering import Tier, assess_tiers
+    from swh.tiering import assess_tiers
 
     dsn = settings.database.direct_psycopg2_dsn
 

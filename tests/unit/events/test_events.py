@@ -211,6 +211,50 @@ class TestEventParticipantExposureClass(TestCase):
             with transaction.atomic():
                 p.save(update_fields=["exposure_class"])
 
+    def test_undeclared_exposure_class_value_rejected_by_db_constraint(self):
+        # ck_evpart_sourcing_note_required is permissive-by-NOT: its
+        # condition (~Q(exposure_class="incidental_private") | ...) is
+        # satisfied by ANY value other than "incidental_private", including
+        # values outside the declared choices. Without a dedicated
+        # ck_evpart_exposure_class_valid constraint, an undeclared value
+        # like "not_a_real_value" would bypass the sourcing_note check
+        # entirely and insert cleanly at the DB layer, even though
+        # Django's choices= already blocks it at the ORM/admin layer.
+        e = Event.objects.create(event_type="transaction", event_date=date(2024, 1, 1))
+        with pytest.raises(IntegrityError):
+            with transaction.atomic():
+                EventParticipant.objects.create(
+                    event=e,
+                    agent_uuid=uuid.uuid4(),
+                    agent_type="person",
+                    role_in_event="subject",
+                    exposure_class="not_a_real_value",
+                    sourcing_note="",
+                )
+
+    def test_declared_exposure_class_values_still_succeed(self):
+        # Regression check: ck_evpart_exposure_class_valid must not reject
+        # either of the two legitimate, declared exposure_class values.
+        e = Event.objects.create(event_type="transaction", event_date=date(2024, 1, 1))
+        public_actor = EventParticipant.objects.create(
+            event=e,
+            agent_uuid=uuid.uuid4(),
+            agent_type="person",
+            role_in_event="subject",
+            exposure_class="public_actor",
+            sourcing_note="",
+        )
+        incidental_private = EventParticipant.objects.create(
+            event=e,
+            agent_uuid=uuid.uuid4(),
+            agent_type="person",
+            role_in_event="witness",
+            exposure_class="incidental_private",
+            sourcing_note="Named in a scandal report; not a public actor.",
+        )
+        assert public_actor.exposure_class == "public_actor"
+        assert incidental_private.exposure_class == "incidental_private"
+
 
 @pytest.mark.django_db
 class TestSharedQuerySurface(TestCase):

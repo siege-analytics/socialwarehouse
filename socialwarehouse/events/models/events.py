@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from socialwarehouse.core.mixins import (
@@ -10,6 +11,7 @@ EVENT_TYPE_CHOICES = [
     ("corporate", "Corporate Event"),
     ("spatiotemporal", "Spatio-Temporal Event"),
     ("electoral", "Electoral Event"),
+    ("narrative", "Narrative Event"),
 ]
 
 EVENT_STATE_CHOICES = [
@@ -36,6 +38,33 @@ PARTICIPANT_ROLE_CHOICES = [
     ("successor", "Successor"),
     ("affected", "Affected Party"),
     ("other", "Other"),
+]
+
+EXPOSURE_CLASS_PUBLIC_ACTOR = "public_actor"
+EXPOSURE_CLASS_INCIDENTAL_PRIVATE = "incidental_private"
+
+EXPOSURE_CLASS_CHOICES = [
+    (EXPOSURE_CLASS_PUBLIC_ACTOR, "Public Actor"),
+    (EXPOSURE_CLASS_INCIDENTAL_PRIVATE, "Incidental Private"),
+]
+
+NARRATIVE_EVENT_TYPE_CHOICES = [
+    ("speech", "Speech"),
+    ("scandal", "Scandal"),
+    ("endorsement", "Endorsement"),
+    ("pac_formation", "PAC Formation"),
+    ("pledge_letter", "Pledge Letter"),
+    ("indictment", "Indictment"),
+    ("resignation", "Resignation"),
+    ("other", "Other"),
+]
+
+DURATION_MODE_BOUNDED = "bounded"
+DURATION_MODE_STRUCTURAL = "structural"
+
+DURATION_MODE_CHOICES = [
+    (DURATION_MODE_BOUNDED, "Bounded (fixed pre/post window)"),
+    (DURATION_MODE_STRUCTURAL, "Structural / Open-Ended"),
 ]
 
 CORPORATE_EVENT_TYPE_CHOICES = [
@@ -175,6 +204,25 @@ class EventParticipant(models.Model):
         choices=PARTICIPANT_ROLE_CHOICES,
         db_index=True,
     )
+    exposure_class = models.CharField(
+        max_length=20,
+        choices=EXPOSURE_CLASS_CHOICES,
+        default=EXPOSURE_CLASS_PUBLIC_ACTOR,
+        db_index=True,
+        help_text=(
+            "public_actor (default) chose their political exposure; "
+            "incidental_private did not and requires sourcing_note "
+            "justifying inclusion"
+        ),
+    )
+    sourcing_note = models.TextField(
+        blank=True,
+        default="",
+        help_text=(
+            "Required when exposure_class=incidental_private: why this "
+            "private individual is named in this event"
+        ),
+    )
 
     class Meta:
         verbose_name = "Event Participant"
@@ -191,6 +239,56 @@ class EventParticipant(models.Model):
                 name="idx_evpart_event_role",
             ),
         ]
+        constraints = [
+            # Django's choices= is form/full_clean()-level only -- it has no
+            # DB representation, so an undeclared value (raw SQL, a bad
+            # .objects.create() call) would otherwise insert cleanly. Without
+            # this, ck_evpart_sourcing_note_required below is silently
+            # bypassable: its condition is permissive-by-NOT
+            # (~Q(exposure_class="incidental_private") is True for ANY other
+            # value, including garbage), so exposure_class="whatever" would
+            # skip the sourcing_note check entirely.
+            models.CheckConstraint(
+                condition=models.Q(
+                    exposure_class__in=[
+                        EXPOSURE_CLASS_PUBLIC_ACTOR,
+                        EXPOSURE_CLASS_INCIDENTAL_PRIVATE,
+                    ]
+                ),
+                name="ck_evpart_exposure_class_valid",
+            ),
+            # incidental_private participants didn't choose public exposure,
+            # so a sourcing justification is required at write time -- not
+            # just a nullable column. Enforced at the DB (fires on every
+            # write path, including raw .objects.create()/.update(), unlike
+            # clean(), which Django only calls from ModelForm/full_clean()).
+            # sourcing_note__regex=r"\S" requires at least one non-whitespace
+            # character, so this rejects whitespace-only notes the same way
+            # clean() below does -- the two layers are kept in lockstep on
+            # purpose; a prior draft that only checked sourcing_note="" at
+            # the DB layer let ``sourcing_note="   "`` slip through every
+            # write path except clean(), silently defeating the guardrail.
+            models.CheckConstraint(
+                condition=~models.Q(exposure_class=EXPOSURE_CLASS_INCIDENTAL_PRIVATE)
+                | models.Q(sourcing_note__regex=r"\S"),
+                name="ck_evpart_sourcing_note_required",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if (
+            self.exposure_class == EXPOSURE_CLASS_INCIDENTAL_PRIVATE
+            and not self.sourcing_note.strip()
+        ):
+            raise ValidationError(
+                {
+                    "sourcing_note": (
+                        "sourcing_note is required when exposure_class is "
+                        "incidental_private."
+                    )
+                }
+            )
 
     def __str__(self):
         return f"{self.agent_uuid} ({self.role_in_event}) in {self.event}"
@@ -341,3 +439,117 @@ class ElectoralEvent(models.Model):
     def __str__(self):
         cert = " (certified)" if self.is_certified else ""
         return f"{self.electoral_event_type}{cert}: {self.event.event_date}"
+
+
+class NarrativeEvent(models.Model):
+    """Analyst-curated real-world event: speech, scandal, endorsement, ...
+
+    Sourced/attested per the shared ``agent_attestations`` pattern via the
+    parent ``Event``'s ``canonical_attestation`` -- provenance is load-bearing
+    here the same as everywhere else in the ontology.
+
+    Duration is analyst-selected at entry, not auto-detected:
+    ``bounded`` (a fixed pre/post window around ``event.event_date``,
+    independently settable) or ``structural`` (open-ended; closed later
+    by setting ``effective_to`` -- the same nullable-close pattern used by
+    ``Vintage``/``Seat``, where NULL means still in effect). Event-to-event
+    supersession linkage (one event closing another's regime) is tracked
+    separately in siege-analytics/socialwarehouse#370 and is out of scope
+    here.
+    """
+
+    event = models.OneToOneField(
+        Event,
+        on_delete=models.CASCADE,
+        related_name="narrative_detail",
+    )
+    narrative_event_type = models.CharField(
+        max_length=30,
+        choices=NARRATIVE_EVENT_TYPE_CHOICES,
+        db_index=True,
+    )
+    duration_mode = models.CharField(
+        max_length=20,
+        choices=DURATION_MODE_CHOICES,
+        default=DURATION_MODE_BOUNDED,
+        db_index=True,
+    )
+    window_pre_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Bounded mode only: days before event.event_date the window opens",
+    )
+    window_post_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Bounded mode only: days after event.event_date the window closes",
+    )
+    effective_to = models.DateField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Structural mode only. NULL = still in effect / open-ended; "
+            "non-null = the date the regime this event opened was closed."
+        ),
+    )
+
+    class Meta:
+        verbose_name = "Narrative Event"
+        verbose_name_plural = "Narrative Events"
+        db_table = "sw_event_narrative"
+        indexes = [
+            models.Index(
+                fields=["narrative_event_type"],
+                name="idx_evnarr_type",
+            ),
+            models.Index(
+                fields=["duration_mode"],
+                name="idx_evnarr_duration_mode",
+            ),
+        ]
+        constraints = [
+            # The two duration modes carry mutually exclusive fields:
+            # bounded rows use window_pre_days/window_post_days (at least
+            # one must be set -- "bounded" with no bound is meaningless)
+            # and must not set effective_to; structural rows use
+            # effective_to and must not set the window fields.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(duration_mode=DURATION_MODE_BOUNDED, effective_to__isnull=True)
+                    & ~models.Q(window_pre_days__isnull=True, window_post_days__isnull=True)
+                )
+                | models.Q(
+                    duration_mode=DURATION_MODE_STRUCTURAL,
+                    window_pre_days__isnull=True,
+                    window_post_days__isnull=True,
+                ),
+                name="ck_evnarr_duration_mode_fields",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.duration_mode == DURATION_MODE_BOUNDED:
+            errors = {}
+            if self.effective_to is not None:
+                errors["effective_to"] = "effective_to only applies in structural mode."
+            if self.window_pre_days is None and self.window_post_days is None:
+                msg = (
+                    "at least one of window_pre_days/window_post_days is "
+                    "required in bounded mode."
+                )
+                errors["window_pre_days"] = msg
+                errors["window_post_days"] = msg
+            if errors:
+                raise ValidationError(errors)
+        elif self.duration_mode == DURATION_MODE_STRUCTURAL:
+            errors = {}
+            if self.window_pre_days is not None:
+                errors["window_pre_days"] = "window_pre_days only applies in bounded mode."
+            if self.window_post_days is not None:
+                errors["window_post_days"] = "window_post_days only applies in bounded mode."
+            if errors:
+                raise ValidationError(errors)
+
+    def __str__(self):
+        return f"{self.narrative_event_type}: {self.event.event_date}"

@@ -2,6 +2,8 @@ import uuid
 from datetime import date
 
 import pytest
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 
 from socialwarehouse.events.models import (
@@ -67,6 +69,17 @@ class TestEventParticipant(TestCase):
                 event=e, agent_uuid=agent, agent_type="person", role_in_event="source",
             )
 
+    def test_default_exposure_class_is_public_actor(self):
+        e = Event.objects.create(
+            event_type="transaction",
+            event_date=date(2024, 1, 1),
+        )
+        p = EventParticipant.objects.create(
+            event=e, agent_uuid=uuid.uuid4(), agent_type="person", role_in_event="source",
+        )
+        assert p.exposure_class == "public_actor"
+        assert p.sourcing_note == ""
+
     def test_same_agent_different_roles(self):
         e = Event.objects.create(
             event_type="electoral",
@@ -80,6 +93,167 @@ class TestEventParticipant(TestCase):
             event=e, agent_uuid=agent, agent_type="person", role_in_event="winner",
         )
         assert e.participants.count() == 2
+
+
+@pytest.mark.django_db
+class TestEventParticipantExposureClass(TestCase):
+    def test_incidental_private_without_sourcing_note_rejected_by_db_constraint(self):
+        e = Event.objects.create(event_type="transaction", event_date=date(2024, 1, 1))
+        with pytest.raises(IntegrityError):
+            with transaction.atomic():
+                EventParticipant.objects.create(
+                    event=e,
+                    agent_uuid=uuid.uuid4(),
+                    agent_type="person",
+                    role_in_event="subject",
+                    exposure_class="incidental_private",
+                    sourcing_note="",
+                )
+
+    def test_incidental_private_with_sourcing_note_succeeds(self):
+        e = Event.objects.create(event_type="transaction", event_date=date(2024, 1, 1))
+        p = EventParticipant.objects.create(
+            event=e,
+            agent_uuid=uuid.uuid4(),
+            agent_type="person",
+            role_in_event="subject",
+            exposure_class="incidental_private",
+            sourcing_note="Named in a scandal report; not a public actor.",
+        )
+        assert p.exposure_class == "incidental_private"
+        assert p.sourcing_note
+
+    def test_public_actor_does_not_require_sourcing_note(self):
+        e = Event.objects.create(event_type="transaction", event_date=date(2024, 1, 1))
+        p = EventParticipant.objects.create(
+            event=e,
+            agent_uuid=uuid.uuid4(),
+            agent_type="person",
+            role_in_event="subject",
+            exposure_class="public_actor",
+            sourcing_note="",
+        )
+        assert p.exposure_class == "public_actor"
+
+    def test_clean_rejects_incidental_private_with_empty_sourcing_note(self):
+        e = Event.objects.create(event_type="transaction", event_date=date(2024, 1, 1))
+        p = EventParticipant(
+            event=e,
+            agent_uuid=uuid.uuid4(),
+            agent_type="person",
+            role_in_event="subject",
+            exposure_class="incidental_private",
+            sourcing_note="",
+        )
+        with pytest.raises(ValidationError):
+            p.clean()
+
+    def test_clean_rejects_incidental_private_with_whitespace_only_sourcing_note(self):
+        # Stricter than the DB constraint, which only checks literal empty
+        # string; clean() also rejects whitespace-only notes.
+        e = Event.objects.create(event_type="transaction", event_date=date(2024, 1, 1))
+        p = EventParticipant(
+            event=e,
+            agent_uuid=uuid.uuid4(),
+            agent_type="person",
+            role_in_event="subject",
+            exposure_class="incidental_private",
+            sourcing_note="   ",
+        )
+        with pytest.raises(ValidationError):
+            p.clean()
+
+    def test_clean_passes_for_incidental_private_with_sourcing_note(self):
+        e = Event.objects.create(event_type="transaction", event_date=date(2024, 1, 1))
+        p = EventParticipant(
+            event=e,
+            agent_uuid=uuid.uuid4(),
+            agent_type="person",
+            role_in_event="subject",
+            exposure_class="incidental_private",
+            sourcing_note="Named in a scandal report; not a public actor.",
+        )
+        p.clean()  # should not raise
+
+    def test_incidental_private_with_whitespace_only_sourcing_note_rejected_on_real_write_path(
+        self,
+    ):
+        # Regression test: clean() alone is not enough, since
+        # .objects.create()/.save() never call it. This must be rejected
+        # by the DB constraint on the actual write path, not just by
+        # calling .clean() directly on an unsaved instance.
+        e = Event.objects.create(event_type="transaction", event_date=date(2024, 1, 1))
+        with pytest.raises(IntegrityError):
+            with transaction.atomic():
+                EventParticipant.objects.create(
+                    event=e,
+                    agent_uuid=uuid.uuid4(),
+                    agent_type="person",
+                    role_in_event="subject",
+                    exposure_class="incidental_private",
+                    sourcing_note="   ",
+                )
+
+    def test_update_to_incidental_private_without_sourcing_note_rejected_by_db_constraint(self):
+        # The constraint must re-validate on UPDATE, not just INSERT: a
+        # participant created as public_actor and later reclassified to
+        # incidental_private still needs a sourcing_note.
+        e = Event.objects.create(event_type="transaction", event_date=date(2024, 1, 1))
+        p = EventParticipant.objects.create(
+            event=e,
+            agent_uuid=uuid.uuid4(),
+            agent_type="person",
+            role_in_event="subject",
+            exposure_class="public_actor",
+        )
+        p.exposure_class = "incidental_private"
+        with pytest.raises(IntegrityError):
+            with transaction.atomic():
+                p.save(update_fields=["exposure_class"])
+
+    def test_undeclared_exposure_class_value_rejected_by_db_constraint(self):
+        # ck_evpart_sourcing_note_required is permissive-by-NOT: its
+        # condition (~Q(exposure_class="incidental_private") | ...) is
+        # satisfied by ANY value other than "incidental_private", including
+        # values outside the declared choices. Without a dedicated
+        # ck_evpart_exposure_class_valid constraint, an undeclared value
+        # like "not_a_real_value" would bypass the sourcing_note check
+        # entirely and insert cleanly at the DB layer, even though
+        # Django's choices= already blocks it at the ORM/admin layer.
+        e = Event.objects.create(event_type="transaction", event_date=date(2024, 1, 1))
+        with pytest.raises(IntegrityError):
+            with transaction.atomic():
+                EventParticipant.objects.create(
+                    event=e,
+                    agent_uuid=uuid.uuid4(),
+                    agent_type="person",
+                    role_in_event="subject",
+                    exposure_class="not_a_real_value",
+                    sourcing_note="",
+                )
+
+    def test_declared_exposure_class_values_still_succeed(self):
+        # Regression check: ck_evpart_exposure_class_valid must not reject
+        # either of the two legitimate, declared exposure_class values.
+        e = Event.objects.create(event_type="transaction", event_date=date(2024, 1, 1))
+        public_actor = EventParticipant.objects.create(
+            event=e,
+            agent_uuid=uuid.uuid4(),
+            agent_type="person",
+            role_in_event="subject",
+            exposure_class="public_actor",
+            sourcing_note="",
+        )
+        incidental_private = EventParticipant.objects.create(
+            event=e,
+            agent_uuid=uuid.uuid4(),
+            agent_type="person",
+            role_in_event="witness",
+            exposure_class="incidental_private",
+            sourcing_note="Named in a scandal report; not a public actor.",
+        )
+        assert public_actor.exposure_class == "public_actor"
+        assert incidental_private.exposure_class == "incidental_private"
 
 
 @pytest.mark.django_db

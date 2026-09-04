@@ -44,6 +44,10 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='eventparticipant',
+            constraint=models.CheckConstraint(condition=models.Q(('exposure_class__in', ['public_actor', 'incidental_private'])), name='ck_evpart_exposure_class_valid'),
+        ),
+        migrations.AddConstraint(
+            model_name='eventparticipant',
             constraint=models.CheckConstraint(condition=models.Q(models.Q(('exposure_class', 'incidental_private'), _negated=True), ('sourcing_note__regex', '\\S'), _connector='OR'), name='ck_evpart_sourcing_note_required'),
         ),
         migrations.AddField(

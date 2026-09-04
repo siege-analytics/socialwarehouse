@@ -240,6 +240,23 @@ class EventParticipant(models.Model):
             ),
         ]
         constraints = [
+            # Django's choices= is form/full_clean()-level only -- it has no
+            # DB representation, so an undeclared value (raw SQL, a bad
+            # .objects.create() call) would otherwise insert cleanly. Without
+            # this, ck_evpart_sourcing_note_required below is silently
+            # bypassable: its condition is permissive-by-NOT
+            # (~Q(exposure_class="incidental_private") is True for ANY other
+            # value, including garbage), so exposure_class="whatever" would
+            # skip the sourcing_note check entirely.
+            models.CheckConstraint(
+                condition=models.Q(
+                    exposure_class__in=[
+                        EXPOSURE_CLASS_PUBLIC_ACTOR,
+                        EXPOSURE_CLASS_INCIDENTAL_PRIVATE,
+                    ]
+                ),
+                name="ck_evpart_exposure_class_valid",
+            ),
             # incidental_private participants didn't choose public exposure,
             # so a sourcing justification is required at write time -- not
             # just a nullable column. Enforced at the DB (fires on every

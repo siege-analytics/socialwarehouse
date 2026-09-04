@@ -92,6 +92,14 @@ ELECTORAL_EVENT_TYPE_CHOICES = [
     ("runoff_triggered", "Runoff Triggered"),
 ]
 
+EDGE_TYPE_PRECEDES = "precedes"
+EDGE_TYPE_RELATES_TO = "relates_to"
+
+EDGE_TYPE_CHOICES = [
+    (EDGE_TYPE_PRECEDES, "Precedes"),
+    (EDGE_TYPE_RELATES_TO, "Relates To"),
+]
+
 
 class Event(SourceAwareModel):
     """Unified event supertype.
@@ -453,9 +461,10 @@ class NarrativeEvent(models.Model):
     independently settable) or ``structural`` (open-ended; closed later
     by setting ``effective_to`` -- the same nullable-close pattern used by
     ``Vintage``/``Seat``, where NULL means still in effect). Event-to-event
-    supersession linkage (one event closing another's regime) is tracked
-    separately in siege-analytics/socialwarehouse#370 and is out of scope
-    here.
+    attested linkage -- ``precedes``/``relates_to`` claims between any two
+    events, e.g. "this endorsement plausibly preceded that fundraising
+    surge" -- is a separate concept, implemented as ``EventLink``
+    (siege-analytics/socialwarehouse#370), and is out of scope here.
     """
 
     event = models.OneToOneField(
@@ -553,3 +562,113 @@ class NarrativeEvent(models.Model):
 
     def __str__(self):
         return f"{self.narrative_event_type}: {self.event.event_date}"
+
+
+class EventLink(models.Model):
+    """Directed, attested edge between two Events: ``precedes`` / ``relates_to``.
+
+    Distinguishes an analyst's claim of relationship ("this endorsement
+    plausibly preceded and contributed to that fundraising surge") from
+    mere temporal proximity -- a plain windowed-correlation query can tell
+    you two events happened near each other in time; it can't tell you one
+    caused or related to the other. This table is where that distinction
+    is recorded, itself sourced/attested like any other claim in this
+    ontology.
+
+    Every edge requires a non-empty ``sourcing_note``: an edge with no
+    stated justification carries no more evidentiary weight than a
+    coincidence, which defeats the purpose of the table.
+
+    One ``source_event`` can link to many ``target_event``s and vice versa
+    -- e.g. a high-profile endorsement plausibly precedes several
+    downstream events (a fundraising email blast, a polling shift, other
+    endorsements that followed). This is the default, unconstrained shape
+    of a plain foreign-key-pair row; nothing here forces a 1:1 pairing.
+    """
+
+    source_event = models.ForeignKey(
+        Event,
+        on_delete=models.CASCADE,
+        related_name="outgoing_links",
+    )
+    target_event = models.ForeignKey(
+        Event,
+        on_delete=models.CASCADE,
+        related_name="incoming_links",
+    )
+    edge_type = models.CharField(
+        max_length=20,
+        choices=EDGE_TYPE_CHOICES,
+        db_index=True,
+    )
+    sourcing_note = models.TextField(
+        blank=True,
+        default="",
+        help_text=(
+            "Required: the analyst's stated basis for this relationship "
+            "claim. An edge with no justification is indistinguishable "
+            "from a coincidental time-window overlap."
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Event Link"
+        verbose_name_plural = "Event Links"
+        db_table = "sw_event_link"
+        unique_together = [("source_event", "target_event", "edge_type")]
+        indexes = [
+            models.Index(
+                fields=["source_event", "edge_type"],
+                name="idx_evlink_source_type",
+            ),
+            models.Index(
+                fields=["target_event", "edge_type"],
+                name="idx_evlink_target_type",
+            ),
+        ]
+        constraints = [
+            # Django's choices= is form/full_clean()-level only -- no DB
+            # representation, so an undeclared edge_type would otherwise
+            # insert cleanly via raw .objects.create(). Matches
+            # ck_evpart_exposure_class_valid's reasoning (SW#369 /
+            # PR#371 CodeRabbit follow-up).
+            models.CheckConstraint(
+                condition=models.Q(
+                    edge_type__in=[EDGE_TYPE_PRECEDES, EDGE_TYPE_RELATES_TO]
+                ),
+                name="ck_evlink_edge_type_valid",
+            ),
+            # An event cannot precede/relate-to itself.
+            models.CheckConstraint(
+                condition=~models.Q(source_event=models.F("target_event")),
+                name="ck_evlink_no_self_loop",
+            ),
+            # sourcing_note is required for every edge, unconditionally --
+            # unlike EventParticipant.sourcing_note (only required for
+            # incidental_private), an EventLink with no stated
+            # justification has zero evidentiary value. Enforced at the DB
+            # (fires on every write path, including raw
+            # .objects.create()/.update()) since Django only calls clean()
+            # from ModelForm/full_clean(). sourcing_note__regex=r"\S"
+            # requires at least one non-whitespace character -- a literal
+            # sourcing_note="" check alone would let "   " slip through,
+            # the exact bug SW#369's hostile review caught the hard way.
+            models.CheckConstraint(
+                condition=models.Q(sourcing_note__regex=r"\S"),
+                name="ck_evlink_sourcing_note_required",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.source_event_id is not None and self.source_event_id == self.target_event_id:
+            errors["target_event"] = "An event cannot link to itself."
+        if not self.sourcing_note.strip():
+            errors["sourcing_note"] = "sourcing_note is required for every event link."
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        return f"{self.source_event} --{self.edge_type}--> {self.target_event}"

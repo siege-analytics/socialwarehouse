@@ -135,3 +135,28 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  notify-failure:
+    name: Notify on CI failure
+    runs-on: ubuntu-latest
+    needs: [test]
+    # Alert only when a push to a protected branch fails. This is the
+    # silent-red-on-develop case (#358): PRs merged for ~10 days while
+    # develop's CI was red and nobody was told. Scoped to push events on
+    # develop/main so PR runs don't spam the channel.
+    if: ${{ failure() && github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') }}
+
+    steps:
+      - name: Post failure alert to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL secret not set; skipping Slack alert."
+            echo "Configure the repo secret SLACK_WEBHOOK_URL to enable red-CI alerting (#358)."
+            exit 0
+          fi
+          text=":red_circle: socialwarehouse CI failed on ${{ github.ref_name }} (by ${{ github.actor }}) -- ${RUN_URL}"
+          curl -sS -X POST -H 'Content-type: application/json' \
+            --data "{\"text\": \"${text}\"}" "$SLACK_WEBHOOK_URL"

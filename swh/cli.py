@@ -417,31 +417,6 @@ def materialize_electoral_all():
         spark.stop()
 
 
-@cli.command("materialize-loc")
-@click.option("--no-historical", is_flag=True, help="Current legislators only (skip historical)")
-@click.option("--batch-size", default=500, type=int, help="Upsert batch size")
-def materialize_loc(no_historical, batch_size):
-    """Ingest Library-of-Congress / congress-legislators into the ontology (#73).
-
-    Fetches the public unitedstates/congress-legislators dataset and
-    upserts Person + Agent hub + external identifiers (bioguide, FEC
-    candidate ids, ...) + a canonical bio Attestation + congressional
-    Office/OfficeTerms. No Spark needed (the dataset is ~13k JSON rows);
-    the write is Django-ORM and idempotent.
-
-    Examples:
-        swh materialize-loc                 # current + historical
-        swh materialize-loc --no-historical # sitting members only
-    """
-    from swh.loc.bronze import fetch_legislators
-    from swh.loc.materialize import materialize_legislators
-
-    records = fetch_legislators(include_historical=not no_historical)
-    click.echo(f"Fetched {len(records):,} legislator records")
-    counts = materialize_legislators(records, batch_size=batch_size)
-    click.echo(f"Materialized: {counts}")
-
-
 @materialize_electoral.command("backfill-addresses")
 @click.option("--tolerance", type=float, default=0.00001, show_default=True, help="Degrees tolerance for lat/lon match (~1m at the equator)")
 def materialize_electoral_backfill_addresses(tolerance):

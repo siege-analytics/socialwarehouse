@@ -41,6 +41,7 @@ def bioguide_id(rec: dict) -> str | None:
 
 
 def _year(datestr) -> int | None:
+    """The 4-digit year of a date string, or None if absent/unparseable."""
     if not datestr:
         return None
     try:
@@ -50,6 +51,7 @@ def _year(datestr) -> int | None:
 
 
 def _parse_date(datestr) -> date | None:
+    """Parse a YYYY-MM-DD prefix to a date, or None if absent/unparseable."""
     if not datestr:
         return None
     try:

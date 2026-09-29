@@ -30,8 +30,9 @@ TIER_AUTHORITATIVE = "authoritative"
 def _ensure_django() -> None:
     """Configure Django once, mirroring swh/reconcile.py."""
     import django
+    from django.apps import apps
 
-    if not django.apps.apps.ready:
+    if not apps.ready:
         django.setup()
 
 
@@ -143,6 +144,8 @@ def materialize_legislators(records, batch_size: int = 500) -> dict:
     Idempotent (deterministic UUID5 keys + update_or_create). Records with
     no bioguide id are skipped. Returns per-kind counts.
     """
+    if batch_size < 1:
+        raise ValueError(f"batch_size must be >= 1, got {batch_size!r}")
     _ensure_django()
     from django.db import transaction
 

@@ -176,3 +176,14 @@ class TestMaterializeOntology:
 
         counts = materialize_legislators([{"id": {}, "name": {"first": "No", "last": "Anchor"}}])
         assert counts == {"persons": 0, "office_terms": 0, "skipped": 1}
+
+
+class TestBatchSizeValidation:
+    """batch_size is validated at the library entrypoint (raise precedes Django setup)."""
+
+    @pytest.mark.parametrize("bad", [0, -1, -500])
+    def test_rejects_zero_and_negative_batch_size(self, bad):
+        from swh.loc.materialize import materialize_legislators
+
+        with pytest.raises(ValueError):
+            materialize_legislators([], batch_size=bad)

@@ -2,7 +2,9 @@ from .events import (
     CorporateEvent,
     ElectoralEvent,
     Event,
+    EventLink,
     EventParticipant,
+    NarrativeEvent,
     SpatioTemporalEvent,
 )
 
@@ -12,4 +14,6 @@ __all__ = [
     "CorporateEvent",
     "SpatioTemporalEvent",
     "ElectoralEvent",
+    "NarrativeEvent",
+    "EventLink",
 ]

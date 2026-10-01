@@ -207,9 +207,13 @@ class Command(BaseCommand):
         plans = {}
         for chamber in ["congress", "state_senate", "state_house"]:
             if state_filter:
-                # Look up state FIPS from abbreviation
+                # Look up state FIPS from abbreviation (what --state documents
+                # and what the Address queryset filters on); full name and
+                # FIPS code are accepted as fallbacks.
                 from siege_utilities.geo.django.models import State
                 st = State.objects.filter(
+                    abbreviation__iexact=state_filter
+                ).first() or State.objects.filter(
                     name__iexact=state_filter
                 ).first() or State.objects.filter(
                     geoid=state_filter
@@ -280,7 +284,7 @@ class Command(BaseCommand):
                         query_point.transform(4269)
 
                         # --- Static boundaries (same regardless of plan) ---
-                        s = State.objects.filter(geom__contains=query_point, vintage_year=year).first()
+                        s = State.objects.filter(geometry__contains=query_point, vintage_year=year).first()
                         if not s:
                             failed += 1
                             continue
@@ -288,16 +292,18 @@ class Command(BaseCommand):
                         state_geoid = s.geoid
                         county_geoid = tract_geoid = bg_geoid = vtd_geoid = None
 
-                        c = County.objects.filter(geom__contains=query_point, vintage_year=year).first()
+                        c = County.objects.filter(geometry__contains=query_point, vintage_year=year).first()
                         if c:
                             county_geoid = c.geoid
-                            t = Tract.objects.filter(geom__contains=query_point, vintage_year=year).first()
+                            t = Tract.objects.filter(geometry__contains=query_point, vintage_year=year).first()
                             if t:
                                 tract_geoid = t.geoid
-                                bg = BlockGroup.objects.filter(geom__contains=query_point, vintage_year=year).first()
+                                bg = BlockGroup.objects.filter(
+                                    geometry__contains=query_point, vintage_year=year
+                                ).first()
                                 if bg:
                                     bg_geoid = bg.geoid
-                            vtd = VTD.objects.filter(geom__contains=query_point, vintage_year=year).first()
+                            vtd = VTD.objects.filter(geometry__contains=query_point, vintage_year=year).first()
                             if vtd:
                                 vtd_geoid = vtd.geoid
 
@@ -313,7 +319,7 @@ class Command(BaseCommand):
                             if congress_plan:
                                 active_plan = congress_plan
                                 pd = PlanDistrict.objects.filter(
-                                    plan=congress_plan, geom__contains=query_point
+                                    plan=congress_plan, geometry__contains=query_point
                                 ).first()
                                 if pd:
                                     cd_geoid = pd.geoid or pd.district_number
@@ -324,7 +330,7 @@ class Command(BaseCommand):
                             senate_plan = active_plans.get((s.state_fips, "state_senate"))
                             if senate_plan:
                                 pd = PlanDistrict.objects.filter(
-                                    plan=senate_plan, geom__contains=query_point
+                                    plan=senate_plan, geometry__contains=query_point
                                 ).first()
                                 if pd:
                                     sldu_geoid = pd.geoid or pd.district_number
@@ -334,7 +340,7 @@ class Command(BaseCommand):
                             house_plan = active_plans.get((s.state_fips, "state_house"))
                             if house_plan:
                                 pd = PlanDistrict.objects.filter(
-                                    plan=house_plan, geom__contains=query_point
+                                    plan=house_plan, geometry__contains=query_point
                                 ).first()
                                 if pd:
                                     sldl_geoid = pd.geoid or pd.district_number
@@ -343,34 +349,36 @@ class Command(BaseCommand):
                         # Fall back to Census boundaries for any political level not resolved by plan
                         if not cd_geoid:
                             cd = CongressionalDistrict.objects.filter(
-                                geom__contains=query_point, vintage_year=year
+                                geometry__contains=query_point, vintage_year=year
                             ).first()
                             if cd:
                                 cd_geoid = cd.geoid
 
                         if not sldl_geoid:
                             sldl = StateLegislativeLower.objects.filter(
-                                geom__contains=query_point, vintage_year=year
+                                geometry__contains=query_point, vintage_year=year
                             ).first()
                             if sldl:
                                 sldl_geoid = sldl.geoid
 
                         if not sldu_geoid:
                             sldu = StateLegislativeUpper.objects.filter(
-                                geom__contains=query_point, vintage_year=year
+                                geometry__contains=query_point, vintage_year=year
                             ).first()
                             if sldu:
                                 sldu_geoid = sldu.geoid
 
                         # --- Store on Address (backward compat) ---
+                        # Address geoid columns are NOT NULL with a "" default
+                        # (F3 / SW#92); an unresolved level is stored as "".
                         addr.state_geoid = state_geoid
-                        addr.county_geoid = county_geoid
-                        addr.tract_geoid = tract_geoid
-                        addr.block_group_geoid = bg_geoid
-                        addr.vtd_geoid = vtd_geoid
-                        addr.cd_geoid = cd_geoid
-                        addr.sldl_geoid = sldl_geoid
-                        addr.sldu_geoid = sldu_geoid
+                        addr.county_geoid = county_geoid or ""
+                        addr.tract_geoid = tract_geoid or ""
+                        addr.block_group_geoid = bg_geoid or ""
+                        addr.vtd_geoid = vtd_geoid or ""
+                        addr.cd_geoid = cd_geoid or ""
+                        addr.sldl_geoid = sldl_geoid or ""
+                        addr.sldu_geoid = sldu_geoid or ""
                         addr.census_year = year
                         addr.census_units_assigned_at = timezone.now()
 

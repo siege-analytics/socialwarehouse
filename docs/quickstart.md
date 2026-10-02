@@ -133,7 +133,7 @@ python manage.py seed_demo --states 48
 
 The `seed_demo` command wraps these per-domain commands; you can run them individually if you want finer control:
 
-- `python manage.py assign_boundaries --year 2020 --state 48` — political
+- `python manage.py assign_boundaries --year 2020 --state TX` — political
 - `python manage.py load_acs --vintage 2019-2023 --state 48 --geography county` — demographic
 - `python manage.py load_qcew --vintage 2024Q3 --state 48` — economic
 - `python manage.py load_nces --vintage 2022-23 --state 48` — civic (CCD district)

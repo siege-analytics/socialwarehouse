@@ -26,11 +26,11 @@ from django.contrib.gis.db.models.functions import Area, Intersection, Transform
 
 cd_rows = (
     CongressionalDistrict.objects
-    .filter(vintage_year=year, geom__intersects=county.geom)
+    .filter(vintage_year=year, geometry__intersects=county.geometry)
     .annotate(
-        intersection_geom=Intersection("geom", county.geom),
+        intersection_geom=Intersection("geometry", county.geometry),
         intersection_area_m2=Area(
-            Transform(Intersection("geom", county.geom), srid)
+            Transform(Intersection("geometry", county.geometry), srid)
         ),
     )
 )
@@ -42,8 +42,8 @@ For Area and Length, **project to a metric CRS before measuring**. `geom.area` o
 
 Python-side geometry calls are **not** the antipattern when:
 
-- **Building a value object from non-database input.** `Point(lon, lat, srid=4326)` from a user-supplied lat/lon, or a geocoder result — that point is then passed to a queryset (`Model.objects.filter(geom__contains=point)`), which runs server-side. See `socialwarehouse/api/geo/views.py` lines 170 and 345 for the canonical example.
-- **One-time normalization, then many filters.** `point.clone()` + `point.transform(4269)` once per address, followed by many `Model.objects.filter(geom__contains=point, ...)` calls. See `socialwarehouse/geo/management/commands/assign_boundaries.py:272` — the alternative (wrapping every filter in `Transform(...)`) is wordier for the same SQL.
+- **Building a value object from non-database input.** `Point(lon, lat, srid=4326)` from a user-supplied lat/lon, or a geocoder result — that point is then passed to a queryset (`Model.objects.filter(geometry__contains=point)`), which runs server-side. See `socialwarehouse/api/geo/views.py` lines 170 and 345 for the canonical example.
+- **One-time normalization, then many filters.** `point.clone()` + `point.transform(4269)` once per address, followed by many `Model.objects.filter(geometry__contains=point, ...)` calls. See `socialwarehouse/geo/management/commands/assign_boundaries.py:272` — the alternative (wrapping every filter in `Transform(...)`) is wordier for the same SQL.
 - **Single-row diagnostic.** After `qs.first()` returns one row, accessing `.geom.area` for a print or one-shot computation is fine. The antipattern is the *loop* shape, not the access pattern.
 
 ## Audit baseline (2026-05-19)

@@ -102,20 +102,20 @@ class Command(BaseCommand):
 
             cd_rows = list(
                 CongressionalDistrict.objects
-                .filter(vintage_year=year, geom__intersects=county.geom)
+                .filter(vintage_year=year, geometry__intersects=county.geometry)
                 .annotate(
-                    sw_intersection_geom=Intersection("geom", county.geom),
+                    sw_intersection_geom=Intersection("geometry", county.geometry),
                     sw_intersection_area=Area(
-                        Transform(Intersection("geom", county.geom), srid)
+                        Transform(Intersection("geometry", county.geometry), srid)
                     ),
-                    sw_cd_area=Area(Transform("geom", srid)),
+                    sw_cd_area=Area(Transform("geometry", srid)),
                 )
             )
 
             county_area_sqm = (
                 County.objects
                 .filter(pk=county.pk)
-                .annotate(sw_area=Area(Transform("geom", srid)))
+                .annotate(sw_area=Area(Transform("geometry", srid)))
                 .values_list("sw_area", flat=True)
                 .first()
             )
@@ -187,20 +187,20 @@ class Command(BaseCommand):
 
             cd_rows = list(
                 CongressionalDistrict.objects
-                .filter(vintage_year=year, geom__intersects=vtd.geom)
+                .filter(vintage_year=year, geometry__intersects=vtd.geometry)
                 .annotate(
-                    sw_intersection_geom=Intersection("geom", vtd.geom),
+                    sw_intersection_geom=Intersection("geometry", vtd.geometry),
                     sw_intersection_area=Area(
-                        Transform(Intersection("geom", vtd.geom), srid)
+                        Transform(Intersection("geometry", vtd.geometry), srid)
                     ),
-                    sw_cd_area=Area(Transform("geom", srid)),
+                    sw_cd_area=Area(Transform("geometry", srid)),
                 )
             )
 
             vtd_area_sqm = (
                 VTD.objects
                 .filter(pk=vtd.pk)
-                .annotate(sw_area=Area(Transform("geom", srid)))
+                .annotate(sw_area=Area(Transform("geometry", srid)))
                 .values_list("sw_area", flat=True)
                 .first()
             )

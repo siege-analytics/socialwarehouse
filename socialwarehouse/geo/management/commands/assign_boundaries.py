@@ -364,19 +364,6 @@ class Command(BaseCommand):
                             if sldu:
                                 sldu_geoid = sldu.geoid
 
-                        # Unmatched levels must be "" (the *_geoid columns are
-                        # NOT NULL CharField(default="")), never None. Coalesce
-                        # once here so both the Address save below and the
-                        # AddressBoundaryPeriod defaults get "". (#376)
-                        state_geoid = state_geoid or ""
-                        county_geoid = county_geoid or ""
-                        tract_geoid = tract_geoid or ""
-                        bg_geoid = bg_geoid or ""
-                        vtd_geoid = vtd_geoid or ""
-                        cd_geoid = cd_geoid or ""
-                        sldl_geoid = sldl_geoid or ""
-                        sldu_geoid = sldu_geoid or ""
-
                         # --- Store on Address (backward compat) ---
                         addr.state_geoid = state_geoid
                         addr.county_geoid = county_geoid

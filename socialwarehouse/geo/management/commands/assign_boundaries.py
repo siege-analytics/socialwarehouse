@@ -207,15 +207,13 @@ class Command(BaseCommand):
         plans = {}
         for chamber in ["congress", "state_senate", "state_house"]:
             if state_filter:
-                # Look up state FIPS. The --state filter is a 2-letter
-                # abbreviation (e.g. "AL"), so resolve abbreviation first;
-                # keep full-name and GEOID/FIPS as fallbacks. (#376)
+                # Look up state FIPS from abbreviation
                 from siege_utilities.geo.django.models import State
-                st = (
-                    State.objects.filter(abbreviation__iexact=state_filter).first()
-                    or State.objects.filter(name__iexact=state_filter).first()
-                    or State.objects.filter(geoid=state_filter).first()
-                )
+                st = State.objects.filter(
+                    name__iexact=state_filter
+                ).first() or State.objects.filter(
+                    geoid=state_filter
+                ).first()
                 if st:
                     plan = RedistrictingPlan.objects.for_date(st.state_fips, chamber, context_date)
                     if plan:
